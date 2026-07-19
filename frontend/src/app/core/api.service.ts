@@ -69,6 +69,12 @@ export interface Bien {
   created_at?: string;
 }
 
+export interface PartReservation {
+  proprietaire_id: number;
+  proprietaire_nom: string;
+  montant: number | string | null;
+}
+
 export interface Reservation {
   id?: number;
   appartement: number;
@@ -80,8 +86,65 @@ export interface Reservation {
   statut: 'confirmee' | 'annulee';
   montant_revenu?: number | string | null;
   notes?: string;
+  parts_proprietaires?: PartReservation[];
   created_at?: string;
   updated_at?: string;
+}
+
+export interface Remboursement {
+  id?: number;
+  proprietaire: number;
+  frais: number[];
+  montant: number | string;
+  date_versement: string;
+  moyen_paiement: 'virement' | 'especes' | 'cheque' | 'autre';
+  notes?: string;
+  created_by?: string;
+  created_at?: string;
+}
+
+export interface ApportInitial {
+  id?: number;
+  bien: number;
+  proprietaire: number;
+  montant: number | string;
+  date: string;
+  notes?: string;
+  created_by?: string;
+  created_at?: string;
+}
+
+export interface VersementRevenu {
+  id?: number;
+  bien: number;
+  proprietaire: number;
+  montant: number | string;
+  date_versement: string;
+  moyen_paiement: 'virement' | 'especes' | 'cheque' | 'autre';
+  notes?: string;
+  created_by?: string;
+  created_at?: string;
+}
+
+export interface BilanLigne {
+  proprietaire_id: number;
+  proprietaire_nom: string;
+  quote_part_pct: number | string;
+  investissement_financier: number | string;
+  investissement_temporel_valorise: number | string;
+  poids_pct: number | string;
+  part_revenus_estimee: number | string;
+  deja_verse: number | string;
+  solde_du: number | string;
+}
+
+export interface Bilan {
+  bien_id: number;
+  bien_nom: string;
+  revenu_brut_total: number | string;
+  frais_total: number | string;
+  cumul_gains_depenses: number | string;
+  proprietaires: BilanLigne[];
 }
 
 export interface Frais {
@@ -248,6 +311,10 @@ export class ApiService {
   }
 
   // Frais (upload de facture en multipart si un fichier est fourni)
+  getFraisList(filters?: { tache?: number }): Observable<Frais[]> {
+    const suffix = filters?.tache ? `frais/?tache=${filters.tache}` : 'frais/';
+    return this.http.get<Frais[]>(this.url(suffix));
+  }
   createFrais(data: Partial<Frais>, facture?: File | null): Observable<Frais> {
     return this.http.post<Frais>(this.url('frais/'), this.toFraisBody(data, facture));
   }
@@ -266,5 +333,46 @@ export class ApiService {
     });
     form.append('facture', facture);
     return form;
+  }
+
+  // Remboursements (frais avancés par un propriétaire)
+  getRemboursements(proprietaireId?: number): Observable<Remboursement[]> {
+    const suffix = proprietaireId ? `remboursements/?proprietaire=${proprietaireId}` : 'remboursements/';
+    return this.http.get<Remboursement[]>(this.url(suffix));
+  }
+  createRemboursement(data: Partial<Remboursement>): Observable<Remboursement> {
+    return this.http.post<Remboursement>(this.url('remboursements/'), data);
+  }
+  deleteRemboursement(id: number): Observable<void> {
+    return this.http.delete<void>(this.url(`remboursements/${id}/`));
+  }
+
+  // Apports initiaux
+  getApportsInitiaux(bienId?: number): Observable<ApportInitial[]> {
+    const suffix = bienId ? `apports-initiaux/?bien=${bienId}` : 'apports-initiaux/';
+    return this.http.get<ApportInitial[]>(this.url(suffix));
+  }
+  createApportInitial(data: Partial<ApportInitial>): Observable<ApportInitial> {
+    return this.http.post<ApportInitial>(this.url('apports-initiaux/'), data);
+  }
+  deleteApportInitial(id: number): Observable<void> {
+    return this.http.delete<void>(this.url(`apports-initiaux/${id}/`));
+  }
+
+  // Versements de revenus
+  getVersementsRevenu(bienId?: number): Observable<VersementRevenu[]> {
+    const suffix = bienId ? `versements-revenu/?bien=${bienId}` : 'versements-revenu/';
+    return this.http.get<VersementRevenu[]>(this.url(suffix));
+  }
+  createVersementRevenu(data: Partial<VersementRevenu>): Observable<VersementRevenu> {
+    return this.http.post<VersementRevenu>(this.url('versements-revenu/'), data);
+  }
+  deleteVersementRevenu(id: number): Observable<void> {
+    return this.http.delete<void>(this.url(`versements-revenu/${id}/`));
+  }
+
+  // Bilan économique
+  getBilan(bienId: number): Observable<Bilan> {
+    return this.http.get<Bilan>(this.url(`biens/${bienId}/bilan/`));
   }
 }

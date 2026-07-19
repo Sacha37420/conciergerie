@@ -1,0 +1,188 @@
+<div class="page">
+  <div class="page-header">
+    <h2>Bilan économique</h2>
+  </div>
+
+  @if (error()) {
+    <div class="alert alert-danger">{{ error() }}</div>
+  }
+
+  <div class="filters">
+    <label>
+      Bien :
+      <select [(ngModel)]="selectedBienId" (ngModelChange)="loadBilan()">
+        @for (b of biens(); track b.id) {
+          <option [ngValue]="b.id">{{ b.nom }}</option>
+        }
+      </select>
+    </label>
+  </div>
+
+  @if (loading()) {
+    <p class="loading">Chargement…</p>
+  } @else if (bilan(); as bl) {
+
+    <div class="card">
+      <h3>{{ bl.bien_nom }}</h3>
+      <dl class="dl-grid">
+        <dt>Revenus (séjours renseignés)</dt> <dd>{{ bl.revenu_brut_total }} €</dd>
+        <dt>Total des frais</dt>              <dd>{{ bl.frais_total }} €</dd>
+        <dt>Cumul gains − dépenses</dt>
+        <dd><strong>{{ bl.cumul_gains_depenses }} €</strong></dd>
+      </dl>
+    </div>
+
+    <div class="card" style="padding:0; overflow-x:auto">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Propriétaire</th>
+            <th>Quote-part</th>
+            <th>Investi (non remboursé)</th>
+            <th>Investi (temps valorisé)</th>
+            <th>Poids répartition</th>
+            <th>Part revenus estimée</th>
+            <th>Déjà versé</th>
+            <th>Solde dû</th>
+            @if (isManager) { <th></th> }
+          </tr>
+        </thead>
+        <tbody>
+          @for (l of bl.proprietaires; track l.proprietaire_id) {
+            <tr>
+              <td><strong>{{ l.proprietaire_nom }}</strong></td>
+              <td>{{ l.quote_part_pct }}%</td>
+              <td>{{ l.investissement_financier }} €</td>
+              <td>{{ l.investissement_temporel_valorise }} €</td>
+              <td>{{ l.poids_pct }}%</td>
+              <td>{{ l.part_revenus_estimee }} €</td>
+              <td>{{ l.deja_verse }} €</td>
+              <td><strong>{{ l.solde_du }} €</strong></td>
+              @if (isManager) {
+                <td class="actions">
+                  <button class="btn btn-secondary btn-sm" (click)="openApport(l.proprietaire_id)">+ Apport</button>
+                  <button class="btn btn-secondary btn-sm" (click)="openVersement(l.proprietaire_id)">+ Versement</button>
+                </td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <p class="hint">
+      Le solde dû reste souvent élevé et jamais soldé si le revenu est réinvesti dans le bien —
+      c'est normal, pas une anomalie. Il ne diminue que lorsqu'un versement est enregistré.
+    </p>
+
+    @if (isManager) {
+      <h3>Apports initiaux</h3>
+      <div class="card" style="padding:0">
+        <table class="data-table">
+          <thead><tr><th>Propriétaire</th><th>Montant</th><th>Date</th><th>Notes</th><th></th></tr></thead>
+          <tbody>
+            @for (a of apports(); track a.id) {
+              <tr>
+                <td>{{ nomProprietaire(a.proprietaire) }}</td>
+                <td>{{ a.montant }} €</td>
+                <td>{{ a.date }}</td>
+                <td>{{ a.notes || '—' }}</td>
+                <td class="actions"><button class="btn btn-danger btn-sm" (click)="deleteApport(a)">Supprimer</button></td>
+              </tr>
+            }
+            @if (apports().length === 0) {
+              <tr><td colspan="5" class="empty">Aucun apport initial.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Versements de revenus</h3>
+      <div class="card" style="padding:0">
+        <table class="data-table">
+          <thead><tr><th>Propriétaire</th><th>Montant</th><th>Date</th><th>Moyen</th><th>Notes</th><th></th></tr></thead>
+          <tbody>
+            @for (v of versements(); track v.id) {
+              <tr>
+                <td>{{ nomProprietaire(v.proprietaire) }}</td>
+                <td>{{ v.montant }} €</td>
+                <td>{{ v.date_versement }}</td>
+                <td>{{ v.moyen_paiement }}</td>
+                <td>{{ v.notes || '—' }}</td>
+                <td class="actions"><button class="btn btn-danger btn-sm" (click)="deleteVersement(v)">Supprimer</button></td>
+              </tr>
+            }
+            @if (versements().length === 0) {
+              <tr><td colspan="6" class="empty">Aucun versement de revenus — le plus souvent normal (revenu réinvesti).</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+  } @else {
+    <p class="hint">Aucun bien accessible.</p>
+  }
+</div>
+
+@if (showVersementModal()) {
+  <div class="modal-backdrop" (click)="closeVersementModal()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>Enregistrer un versement de revenus</h3>
+      <form (ngSubmit)="saveVersement()">
+        <div class="form-group">
+          <label>Montant (€) *</label>
+          <input [(ngModel)]="versementForm.montant" name="montant" type="number" step="0.01" required />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Date *</label>
+            <input [(ngModel)]="versementForm.date_versement" name="date_versement" type="date" required />
+          </div>
+          <div class="form-group">
+            <label>Moyen de paiement</label>
+            <select [(ngModel)]="versementForm.moyen_paiement" name="moyen_paiement">
+              <option value="virement">Virement</option>
+              <option value="especes">Espèces</option>
+              <option value="cheque">Chèque</option>
+              <option value="autre">Autre</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea [(ngModel)]="versementForm.notes" name="notes"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" (click)="closeVersementModal()">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+}
+
+@if (showApportModal()) {
+  <div class="modal-backdrop" (click)="closeApportModal()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>Ajouter un apport initial</h3>
+      <form (ngSubmit)="saveApport()">
+        <div class="form-group">
+          <label>Montant (€) *</label>
+          <input [(ngModel)]="apportForm.montant" name="montant" type="number" step="0.01" required />
+        </div>
+        <div class="form-group">
+          <label>Date *</label>
+          <input [(ngModel)]="apportForm.date" name="date" type="date" required />
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea [(ngModel)]="apportForm.notes" name="notes" placeholder="Apport à l'achat, gros travaux financés directement…"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" (click)="closeApportModal()">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+}

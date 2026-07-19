@@ -6,7 +6,10 @@ class Proprietaire(models.Model):
     Keycloak (groupe `proprietaires`) pour scoper son accès au portail."""
 
     nom = models.CharField(max_length=150)
-    email = models.EmailField(max_length=254, unique=True, blank=True, default='')
+    # null (pas '') pour les valeurs absentes : sous unique=True, Postgres
+    # autorise plusieurs NULL mais rejette plusieurs '' — un propriétaire
+    # sans accès au portail (pas encore de compte Keycloak) n'a pas d'email.
+    email = models.EmailField(max_length=254, unique=True, null=True, blank=True, default=None)
     telephone = models.CharField(max_length=30, blank=True, default='')
     notes = models.TextField(blank=True, default='')
 
@@ -233,3 +236,74 @@ class Frais(models.Model):
 
     def __str__(self) -> str:
         return f'{self.libelle} ({self.montant_total} €)'
+
+
+MOYEN_PAIEMENT_CHOICES = [
+    ('virement', 'Virement'), ('especes', 'Espèces'),
+    ('cheque', 'Chèque'), ('autre', 'Autre'),
+]
+
+
+class Remboursement(models.Model):
+    """Versement effectué depuis le compte de la maison à un propriétaire,
+    en règlement d'un ou plusieurs `Frais` qu'il a avancés. Un versement peut
+    solder plusieurs frais d'un coup."""
+
+    proprietaire = models.ForeignKey(Proprietaire, on_delete=models.CASCADE, related_name='remboursements')
+    frais = models.ManyToManyField(Frais, related_name='remboursements', blank=True)
+    montant = models.DecimalField(max_digits=10, decimal_places=2)
+    date_versement = models.DateField()
+    moyen_paiement = models.CharField(max_length=15, choices=MOYEN_PAIEMENT_CHOICES, default='virement')
+    notes = models.TextField(blank=True, default='')
+    created_by = models.EmailField(max_length=254, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'remboursement'
+        ordering = ['-date_versement']
+
+    def __str__(self) -> str:
+        return f'{self.proprietaire} — {self.montant} € ({self.date_versement})'
+
+
+class ApportInitial(models.Model):
+    """Capital investi par un propriétaire hors du circuit Tache/Frais (ex :
+    apport à l'achat, gros travaux financés directement) — alimente
+    l'investissement financier utilisé par le bilan économique (api/bilan.py)."""
+
+    bien = models.ForeignKey(Bien, on_delete=models.CASCADE, related_name='apports')
+    proprietaire = models.ForeignKey(Proprietaire, on_delete=models.CASCADE, related_name='apports')
+    montant = models.DecimalField(max_digits=10, decimal_places=2)
+    date = models.DateField()
+    notes = models.TextField(blank=True, default='')
+    created_by = models.EmailField(max_length=254, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'apport_initial'
+        ordering = ['-date']
+
+    def __str__(self) -> str:
+        return f'{self.proprietaire} — {self.montant} € ({self.bien})'
+
+
+class VersementRevenu(models.Model):
+    """Part de revenus locatifs effectivement reversée à un propriétaire.
+    Distinct de `Remboursement` (qui solde des `Frais` précis) : en pratique
+    souvent absent, le revenu étant le plus souvent entièrement réinvesti."""
+
+    bien = models.ForeignKey(Bien, on_delete=models.CASCADE, related_name='versements_revenu')
+    proprietaire = models.ForeignKey(Proprietaire, on_delete=models.CASCADE, related_name='versements_revenu')
+    montant = models.DecimalField(max_digits=10, decimal_places=2)
+    date_versement = models.DateField()
+    moyen_paiement = models.CharField(max_length=15, choices=MOYEN_PAIEMENT_CHOICES, default='virement')
+    notes = models.TextField(blank=True, default='')
+    created_by = models.EmailField(max_length=254, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'versement_revenu'
+        ordering = ['-date_versement']
+
+    def __str__(self) -> str:
+        return f'{self.proprietaire} — {self.montant} € ({self.bien})'

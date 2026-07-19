@@ -1,0 +1,121 @@
+<div class="page">
+  <div class="page-header">
+    <h2>Remboursements</h2>
+  </div>
+
+  @if (error()) {
+    <div class="alert alert-danger">{{ error() }}</div>
+  }
+
+  @if (loading()) {
+    <p class="loading">Chargement…</p>
+  } @else {
+
+    <h3>Frais avancés en attente de remboursement</h3>
+    @if (groupes.length === 0) {
+      <p class="hint">Aucun frais en attente — tout est réglé (ou tout a été payé par la maison).</p>
+    }
+    @for (g of groupes; track g.proprietaire.id) {
+      <div class="card">
+        <div class="page-header" style="margin-bottom: var(--space-3)">
+          <h3 style="margin:0">{{ g.proprietaire.nom }} — <span class="stat" style="font-size:var(--text-lg)">{{ g.total.toFixed(2) }} €</span></h3>
+          @if (isManager) {
+            <button class="btn btn-primary btn-sm" (click)="openRembourser(g)">Enregistrer un remboursement</button>
+          }
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              @if (isManager) { <th></th> }
+              <th>Libellé</th><th>Montant</th><th>Facture</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (f of g.frais; track f.id) {
+              <tr>
+                @if (isManager) {
+                  <td><input type="checkbox" [checked]="selection.has(f.id!)" (change)="toggle(f.id!)" /></td>
+                }
+                <td>{{ f.libelle }}</td>
+                <td>{{ f.montant_total }} €</td>
+                <td>
+                  @if (f.facture) { <a [href]="f.facture" target="_blank" rel="noopener">Voir</a> } @else { — }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+    <h3>Historique des remboursements</h3>
+    <div class="card" style="padding:0">
+      <table class="data-table">
+        <thead>
+          <tr>
+            @if (isManager) { <th>Propriétaire</th> }
+            <th>Montant</th><th>Date</th><th>Moyen</th><th>Notes</th>
+            @if (isManager) { <th></th> }
+          </tr>
+        </thead>
+        <tbody>
+          @for (r of historique(); track r.id) {
+            <tr>
+              @if (isManager) { <td>{{ proprietaires().find(p => p.id === r.proprietaire)?.nom ?? '—' }}</td> }
+              <td><strong>{{ r.montant }} €</strong></td>
+              <td>{{ r.date_versement }}</td>
+              <td>{{ r.moyen_paiement }}</td>
+              <td>{{ r.notes || '—' }}</td>
+              @if (isManager) {
+                <td class="actions">
+                  <button class="btn btn-danger btn-sm" (click)="deleteRemboursement(r)">Annuler</button>
+                </td>
+              }
+            </tr>
+          }
+          @if (historique().length === 0) {
+            <tr><td [attr.colspan]="isManager ? 6 : 4" class="empty">Aucun remboursement enregistré.</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</div>
+
+@if (showModal()) {
+  <div class="modal-backdrop" (click)="close()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>Enregistrer un remboursement</h3>
+      <form (ngSubmit)="save()">
+        <div class="form-group">
+          <label>Montant (€) *</label>
+          <input [(ngModel)]="form.montant" name="montant" type="number" step="0.01" required />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Date *</label>
+            <input [(ngModel)]="form.date_versement" name="date_versement" type="date" required />
+          </div>
+          <div class="form-group">
+            <label>Moyen de paiement</label>
+            <select [(ngModel)]="form.moyen_paiement" name="moyen_paiement">
+              <option value="virement">Virement</option>
+              <option value="especes">Espèces</option>
+              <option value="cheque">Chèque</option>
+              <option value="autre">Autre</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea [(ngModel)]="form.notes" name="notes"></textarea>
+        </div>
+        <p class="hint">{{ form.frais?.length }} frais seront marqués comme remboursés.</p>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" (click)="close()">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+}

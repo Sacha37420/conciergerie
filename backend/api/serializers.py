@@ -3,8 +3,9 @@ from decimal import Decimal
 from rest_framework import serializers
 from .models import (
     Proprietaire, Entreprise, Bien, PartProprietaire, Appartement, Reservation,
-    Tache, Frais,
+    Tache, Frais, Remboursement, ApportInitial, VersementRevenu,
 )
+from . import bilan as bilan_module
 
 
 class ProprietaireSerializer(serializers.ModelSerializer):
@@ -73,13 +74,29 @@ class BienSerializer(serializers.ModelSerializer):
 
 
 class ReservationSerializer(serializers.ModelSerializer):
+    parts_proprietaires = serializers.SerializerMethodField()
+
     class Meta:
         model = Reservation
         fields = [
             'id', 'appartement', 'source', 'uid_externe', 'date_debut', 'date_fin',
-            'libelle', 'statut', 'montant_revenu', 'notes', 'created_at', 'updated_at',
+            'libelle', 'statut', 'montant_revenu', 'notes', 'parts_proprietaires',
+            'created_at', 'updated_at',
         ]
         read_only_fields = ['uid_externe', 'created_at', 'updated_at']
+
+    def get_parts_proprietaires(self, obj):
+        if obj.montant_revenu is None:
+            return []
+        bien = obj.appartement.bien
+        return [
+            {
+                'proprietaire_id': part.proprietaire_id,
+                'proprietaire_nom': part.proprietaire.nom,
+                'montant': bilan_module.part_reservation(obj, part.proprietaire),
+            }
+            for part in bien.parts.select_related('proprietaire')
+        ]
 
 
 class FraisSerializer(serializers.ModelSerializer):
@@ -146,3 +163,41 @@ class TacheSerializer(serializers.ModelSerializer):
         if appartement and bien and appartement.bien_id != bien.id:
             raise serializers.ValidationError("L'appartement doit appartenir au bien sélectionné.")
         return attrs
+
+
+class RemboursementSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Remboursement
+        fields = [
+            'id', 'proprietaire', 'frais', 'montant', 'date_versement',
+            'moyen_paiement', 'notes', 'created_by', 'created_at',
+        ]
+        read_only_fields = ['created_by', 'created_at']
+
+    def validate(self, attrs):
+        proprietaire = attrs.get('proprietaire', getattr(self.instance, 'proprietaire', None))
+        frais_list = attrs.get('frais')
+        if frais_list:
+            for f in frais_list:
+                if f.payeur != 'proprietaire' or f.proprietaire_payeur_id != getattr(proprietaire, 'id', None):
+                    raise serializers.ValidationError(
+                        f"Le frais « {f.libelle} » n'a pas été avancé par ce propriétaire."
+                    )
+        return attrs
+
+
+class ApportInitialSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ApportInitial
+        fields = ['id', 'bien', 'proprietaire', 'montant', 'date', 'notes', 'created_by', 'created_at']
+        read_only_fields = ['created_by', 'created_at']
+
+
+class VersementRevenuSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VersementRevenu
+        fields = [
+            'id', 'bien', 'proprietaire', 'montant', 'date_versement',
+            'moyen_paiement', 'notes', 'created_by', 'created_at',
+        ]
+        read_only_fields = ['created_by', 'created_at']

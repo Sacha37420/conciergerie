@@ -6,12 +6,16 @@ import { ProprietairesComponent } from './pages/proprietaires/proprietaires.comp
 import { EntreprisesComponent } from './pages/entreprises/entreprises.component';
 import { ReservationsComponent } from './pages/reservations/reservations.component';
 import { TachesComponent } from './pages/taches/taches.component';
+import { RemboursementsComponent } from './pages/remboursements/remboursements.component';
+import { BilanComponent } from './pages/bilan/bilan.component';
 
 export const routes: Routes = [
   { path: '',              component: HomeComponent },
   { path: 'biens',         component: BiensComponent },
   { path: 'reservations',  component: ReservationsComponent },
   { path: 'taches',        component: TachesComponent },
+  { path: 'remboursements', component: RemboursementsComponent },
+  { path: 'bilan',         component: BilanComponent },
   { path: 'proprietaires', component: ProprietairesComponent },
   { path: 'entreprises',   component: EntreprisesComponent },
   { path: 'profile',       component: ProfileComponent },

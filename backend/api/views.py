@@ -2,6 +2,7 @@ from io import StringIO
 
 from django.core.management import call_command
 from rest_framework import viewsets
+from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
@@ -9,15 +10,17 @@ from rest_framework.response import Response
 
 from .models import (
     Proprietaire, Entreprise, Bien, PartProprietaire, Appartement, Reservation,
-    Tache, Frais,
+    Tache, Frais, Remboursement, ApportInitial, VersementRevenu,
 )
 from .serializers import (
     ProprietaireSerializer, EntrepriseSerializer, BienSerializer,
     PartProprietaireSerializer, AppartementSerializer, ReservationSerializer,
-    TacheSerializer, FraisSerializer,
+    TacheSerializer, FraisSerializer, RemboursementSerializer,
+    ApportInitialSerializer, VersementRevenuSerializer,
 )
 from .permissions import IsManager, IsManagerOrOwner
 from .scoping import is_manager, proprietaire_for, biens_du_proprietaire, reservations_du_proprietaire
+from . import bilan as bilan_module
 
 
 class MeView(APIView):
@@ -61,6 +64,22 @@ class BienViewSet(viewsets.ModelViewSet):
         if not is_manager(self.request):
             qs = qs.filter(pk__in=biens_du_proprietaire(self.request.user))
         return qs
+
+    @action(detail=True, methods=['get'])
+    def bilan(self, request, pk=None):
+        """GET /api/biens/<id>/bilan/ — répartition entre co-propriétaires
+        (quote-part + investissement financier + investissement temporel) et
+        P&L du bien. get_object() applique déjà le scoping IsManagerOrOwner :
+        un propriétaire ne peut demander le bilan que d'un bien qu'il possède."""
+        bien = self.get_object()
+        data = bilan_module.bilan_bien(bien)
+        if not is_manager(request):
+            proprietaire = proprietaire_for(request.user)
+            data['proprietaires'] = [
+                ligne for ligne in data['proprietaires']
+                if ligne['proprietaire_id'] == getattr(proprietaire, 'id', None)
+            ]
+        return Response(data)
 
 
 class PartProprietaireViewSet(viewsets.ModelViewSet):
@@ -211,6 +230,77 @@ class FraisViewSet(viewsets.ModelViewSet):
                     'Vous ne pouvez supprimer que vos propres frais non encore remboursés.'
                 )
         instance.delete()
+
+
+class RemboursementViewSet(viewsets.ModelViewSet):
+    """Écriture réservée au gestionnaire (c'est lui qui constate le
+    virement). Un propriétaire voit uniquement ses propres remboursements."""
+    serializer_class = RemboursementSerializer
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsAuthenticated(), IsManagerOrOwner()]
+        return [IsAuthenticated(), IsManager()]
+
+    def get_queryset(self):
+        qs = Remboursement.objects.select_related('proprietaire').prefetch_related('frais')
+        if not is_manager(self.request):
+            proprietaire = proprietaire_for(self.request.user)
+            qs = qs.filter(proprietaire=proprietaire) if proprietaire else qs.none()
+        proprietaire_id = self.request.query_params.get('proprietaire')
+        if proprietaire_id:
+            qs = qs.filter(proprietaire_id=proprietaire_id)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user.email)
+
+
+class ApportInitialViewSet(viewsets.ModelViewSet):
+    """Écriture réservée au gestionnaire — un apport initial constate un
+    accord familial, il ne s'auto-déclare pas."""
+    serializer_class = ApportInitialSerializer
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsAuthenticated(), IsManagerOrOwner()]
+        return [IsAuthenticated(), IsManager()]
+
+    def get_queryset(self):
+        qs = ApportInitial.objects.select_related('bien', 'proprietaire')
+        if not is_manager(self.request):
+            qs = qs.filter(bien__in=biens_du_proprietaire(self.request.user))
+        bien_id = self.request.query_params.get('bien')
+        if bien_id:
+            qs = qs.filter(bien_id=bien_id)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user.email)
+
+
+class VersementRevenuViewSet(viewsets.ModelViewSet):
+    """Écriture réservée au gestionnaire. Un propriétaire voit uniquement
+    les versements de revenus qui lui ont été faits."""
+    serializer_class = VersementRevenuSerializer
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsAuthenticated(), IsManagerOrOwner()]
+        return [IsAuthenticated(), IsManager()]
+
+    def get_queryset(self):
+        qs = VersementRevenu.objects.select_related('bien', 'proprietaire')
+        if not is_manager(self.request):
+            proprietaire = proprietaire_for(self.request.user)
+            qs = qs.filter(proprietaire=proprietaire) if proprietaire else qs.none()
+        bien_id = self.request.query_params.get('bien')
+        if bien_id:
+            qs = qs.filter(bien_id=bien_id)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user.email)
 
 
 class SyncAirbnbView(APIView):

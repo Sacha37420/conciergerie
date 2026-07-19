@@ -37,6 +37,8 @@ export class AppComponent {
       { path: '/biens',        label: 'Biens',        abbr: 'Bi' },
       { path: '/reservations', label: 'Réservations', abbr: 'Ré' },
       { path: '/taches',       label: 'Tâches',       abbr: 'Tâ' },
+      { path: '/remboursements', label: 'Remboursements', abbr: 'Rb' },
+      { path: '/bilan',        label: 'Bilan',        abbr: 'Bl' },
     ];
     if (this.kc.isManager) {
       items.push(
