@@ -15,3 +15,8 @@ def proprietaire_for(user) -> Proprietaire | None:
 
 def biens_du_proprietaire(user):
     return Bien.objects.filter(parts__proprietaire__email__iexact=user.email).distinct()
+
+
+def reservations_du_proprietaire(user):
+    from .models import Reservation
+    return Reservation.objects.filter(appartement__bien__in=biens_du_proprietaire(user))

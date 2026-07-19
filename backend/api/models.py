@@ -112,3 +112,41 @@ class Appartement(models.Model):
 
     def __str__(self) -> str:
         return f'{self.bien.nom} — {self.nom}'
+
+
+class Reservation(models.Model):
+    """Un séjour occupant un appartement. Synchronisé en lecture seule depuis
+    le flux iCal Airbnb (dates uniquement — jamais voyageur ni montant), ou
+    saisi manuellement (source `direct`/`autre`, `montant_revenu` renseignable
+    à la main dans les deux cas)."""
+
+    SOURCE_CHOICES = [('airbnb', 'Airbnb'), ('direct', 'Direct'), ('autre', 'Autre')]
+    STATUT_CHOICES = [('confirmee', 'Confirmée'), ('annulee', 'Annulée')]
+
+    appartement = models.ForeignKey(Appartement, on_delete=models.CASCADE, related_name='reservations')
+    source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default='airbnb')
+    # UID de l'événement VEVENT iCal — vide pour une réservation saisie à la
+    # main. Sert de clé d'upsert idempotent au sync (voir management command).
+    uid_externe = models.CharField(max_length=255, blank=True, default='')
+    date_debut = models.DateField()
+    date_fin = models.DateField()
+    libelle = models.CharField(max_length=255, blank=True, default='')
+    statut = models.CharField(max_length=10, choices=STATUT_CHOICES, default='confirmee')
+    montant_revenu = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    notes = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'reservation'
+        ordering = ['-date_debut']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['appartement', 'uid_externe'],
+                condition=~models.Q(uid_externe=''),
+                name='unique_reservation_par_uid_externe',
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f'{self.appartement} — {self.date_debut} → {self.date_fin}'

@@ -1,0 +1,144 @@
+<div class="page">
+  <div class="page-header">
+    <h2>Réservations</h2>
+    <div class="bien-head-actions">
+      @if (isManager) {
+        <button class="btn btn-secondary" (click)="sync()" [disabled]="syncing()">
+          {{ syncing() ? 'Synchronisation…' : '↻ Synchroniser Airbnb' }}
+        </button>
+        <button class="btn btn-primary" (click)="openCreate()">+ Réservation manuelle</button>
+      }
+    </div>
+  </div>
+
+  @if (syncLog()) {
+    <div class="alert alert-info">{{ syncLog() }}</div>
+  }
+  @if (error()) {
+    <div class="alert alert-danger">{{ error() }}</div>
+  }
+
+  <div class="filters">
+    <label>
+      Bien :
+      <select [(ngModel)]="filterBienId" (ngModelChange)="load()">
+        <option value="">Tous</option>
+        @for (b of biens(); track b.id) {
+          <option [ngValue]="b.id">{{ b.nom }}</option>
+        }
+      </select>
+    </label>
+  </div>
+
+  @if (loading()) {
+    <p class="loading">Chargement…</p>
+  } @else {
+    <div class="card" style="padding:0">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Appartement</th>
+            <th>Source</th>
+            <th>Du</th>
+            <th>Au</th>
+            <th>Libellé</th>
+            <th>Statut</th>
+            <th>Revenu</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (r of reservations(); track r.id) {
+            <tr>
+              <td>{{ nomAppartement(r.appartement) }}</td>
+              <td>
+                @if (r.source === 'airbnb') { <span class="badge badge-red">Airbnb</span> }
+                @else if (r.source === 'direct') { <span class="badge badge-blue">Direct</span> }
+                @else { <span class="badge badge-grey">Autre</span> }
+              </td>
+              <td>{{ r.date_debut }}</td>
+              <td>{{ r.date_fin }}</td>
+              <td>{{ r.libelle || '—' }}</td>
+              <td>
+                @if (r.statut === 'confirmee') { <span class="badge badge-green">Confirmée</span> }
+                @else { <span class="badge badge-grey">Annulée</span> }
+              </td>
+              <td>{{ r.montant_revenu ?? '—' }}</td>
+              <td class="actions">
+                @if (isManager) {
+                  <button class="btn btn-secondary btn-sm" (click)="openEdit(r)">Modifier</button>
+                  <button class="btn btn-danger btn-sm" (click)="delete(r)">Supprimer</button>
+                }
+              </td>
+            </tr>
+          }
+          @if (reservations().length === 0) {
+            <tr><td colspan="8" class="empty">Aucune réservation.</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</div>
+
+@if (showModal()) {
+  <div class="modal-backdrop" (click)="close()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>{{ editing() ? 'Modifier' : 'Nouvelle' }} réservation</h3>
+      <form (ngSubmit)="save()">
+        <div class="form-group">
+          <label>Appartement *</label>
+          <select [(ngModel)]="form.appartement" name="appartement" required>
+            @for (a of appartements; track a.id) {
+              <option [ngValue]="a.id">{{ nomAppartement(a.id!) }}</option>
+            }
+          </select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Source</label>
+            <select [(ngModel)]="form.source" name="source">
+              <option value="direct">Direct</option>
+              <option value="autre">Autre</option>
+              <option value="airbnb">Airbnb</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Statut</label>
+            <select [(ngModel)]="form.statut" name="statut">
+              <option value="confirmee">Confirmée</option>
+              <option value="annulee">Annulée</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Du *</label>
+            <input [(ngModel)]="form.date_debut" name="date_debut" type="date" required />
+          </div>
+          <div class="form-group">
+            <label>Au *</label>
+            <input [(ngModel)]="form.date_fin" name="date_fin" type="date" required />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Libellé</label>
+          <input [(ngModel)]="form.libelle" name="libelle" />
+        </div>
+        <div class="form-group">
+          <label>Revenu du séjour (€)</label>
+          <input [(ngModel)]="form.montant_revenu" name="montant_revenu" type="number" step="0.01" />
+          <small class="hint">Non fourni par la synchro Airbnb (iCal) — à saisir à la main si vous voulez suivre les revenus.</small>
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea [(ngModel)]="form.notes" name="notes"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" (click)="close()">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+}

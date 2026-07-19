@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Proprietaire, Entreprise, Bien, PartProprietaire, Appartement
+from .models import Proprietaire, Entreprise, Bien, PartProprietaire, Appartement, Reservation
 
 
 class ProprietaireSerializer(serializers.ModelSerializer):
@@ -65,3 +65,13 @@ class BienSerializer(serializers.ModelSerializer):
                 'investissement temporel) doit être égale à 100.'
             )
         return attrs
+
+
+class ReservationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Reservation
+        fields = [
+            'id', 'appartement', 'source', 'uid_externe', 'date_debut', 'date_fin',
+            'libelle', 'statut', 'montant_revenu', 'notes', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['uid_externe', 'created_at', 'updated_at']

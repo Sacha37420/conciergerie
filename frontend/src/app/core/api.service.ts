@@ -69,6 +69,21 @@ export interface Bien {
   created_at?: string;
 }
 
+export interface Reservation {
+  id?: number;
+  appartement: number;
+  source: 'airbnb' | 'direct' | 'autre';
+  uid_externe?: string;
+  date_debut: string;
+  date_fin: string;
+  libelle?: string;
+  statut: 'confirmee' | 'annulee';
+  montant_revenu?: number | string | null;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private http = inject(HttpClient);
@@ -155,5 +170,23 @@ export class ApiService {
   }
   deleteAppartement(id: number): Observable<void> {
     return this.http.delete<void>(this.url(`appartements/${id}/`));
+  }
+
+  // Réservations
+  getReservations(bienId?: number): Observable<Reservation[]> {
+    const suffix = bienId ? `reservations/?bien=${bienId}` : 'reservations/';
+    return this.http.get<Reservation[]>(this.url(suffix));
+  }
+  createReservation(data: Reservation): Observable<Reservation> {
+    return this.http.post<Reservation>(this.url('reservations/'), data);
+  }
+  updateReservation(id: number, data: Partial<Reservation>): Observable<Reservation> {
+    return this.http.patch<Reservation>(this.url(`reservations/${id}/`), data);
+  }
+  deleteReservation(id: number): Observable<void> {
+    return this.http.delete<void>(this.url(`reservations/${id}/`));
+  }
+  syncAirbnb(): Observable<{ log: string; erreurs: string }> {
+    return this.http.post<{ log: string; erreurs: string }>(this.url('sync/airbnb/'), {});
   }
 }

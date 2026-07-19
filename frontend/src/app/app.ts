@@ -33,8 +33,9 @@ export class AppComponent {
 
   get navItems(): NavItem[] {
     const items: NavItem[] = [
-      { path: '/',      label: 'Accueil', abbr: 'Ac', exact: true },
-      { path: '/biens', label: 'Biens',   abbr: 'Bi' },
+      { path: '/',             label: 'Accueil',      abbr: 'Ac', exact: true },
+      { path: '/biens',        label: 'Biens',        abbr: 'Bi' },
+      { path: '/reservations', label: 'Réservations', abbr: 'Ré' },
     ];
     if (this.kc.isManager) {
       items.push(
