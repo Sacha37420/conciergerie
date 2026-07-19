@@ -144,6 +144,8 @@ export interface Bilan {
   revenu_brut_total: number | string;
   frais_total: number | string;
   cumul_gains_depenses: number | string;
+  charges_maison: number | string;
+  revenu_distribuable: number | string;
   proprietaires: BilanLigne[];
 }
 

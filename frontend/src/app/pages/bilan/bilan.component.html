@@ -26,10 +26,20 @@
       <h3>{{ bl.bien_nom }}</h3>
       <dl class="dl-grid">
         <dt>Revenus (séjours renseignés)</dt> <dd>{{ bl.revenu_brut_total }} €</dd>
-        <dt>Total des frais</dt>              <dd>{{ bl.frais_total }} €</dd>
+        <dt>Total des frais (tous payeurs)</dt> <dd>{{ bl.frais_total }} €</dd>
         <dt>Cumul gains − dépenses</dt>
         <dd><strong>{{ bl.cumul_gains_depenses }} €</strong></dd>
+        <dt>Charges payées par la maison</dt> <dd>{{ bl.charges_maison }} €</dd>
+        <dt>Pot distribuable aux propriétaires</dt>
+        <dd><strong>{{ bl.revenu_distribuable }} €</strong></dd>
       </dl>
+      <p class="hint">
+        Pot distribuable = revenus des séjours − commission de gestion −
+        charges payées par la maison. C'est ce montant qui est réparti
+        ci-dessous selon la clé de répartition du bien — les frais avancés
+        par un propriétaire lui-même n'en font pas partie : ils restent sa
+        propre créance (colonne « Investi »), pas une charge commune.
+      </p>
     </div>
 
     <div class="card" style="padding:0; overflow-x:auto">

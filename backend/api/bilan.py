@@ -64,9 +64,26 @@ def revenu_net_total(bien: Bien) -> Decimal:
     return total
 
 
+def charges_maison_total(bien: Bien) -> Decimal:
+    """Frais payés directement par le compte de la maison (tous, sans
+    filtre de date — même périmètre que `frais_total`/`cumul_gains_depenses`
+    ci-dessous). Ne compte pas les frais avancés par un propriétaire : ceux-là
+    restent une dette qui lui est propre (`investissement_financier`), pas
+    une charge qui réduit le pot distribué à tout le monde."""
+    return sum(
+        (f.montant_total for f in Frais.objects.filter(tache__bien=bien, payeur='maison').select_related('tache')),
+        ZERO,
+    )
+
+
 def part_reservation(reservation: Reservation, proprietaire: Proprietaire) -> Decimal | None:
     """Ce que touche `proprietaire` sur ce séjour précis, selon la clé de
-    répartition du bien — utilisé par l'aperçu « part par séjour »."""
+    répartition du bien — utilisé par l'aperçu « part par séjour ».
+
+    Estimation BRUTE, avant déduction des charges maison (elles ne sont pas
+    rattachées à un séjour précis) : peut donc être optimiste par rapport au
+    `solde_du` agrégé de `bilan_bien()`, qui lui déduit `charges_maison_total`
+    avant de répartir. Voir la note dans le bilan pour l'explication."""
     if reservation.montant_revenu is None:
         return None
     bien = reservation.appartement.bien
@@ -86,6 +103,12 @@ def bilan_bien(bien: Bien) -> dict:
     total_financier = sum((investissement_financier(bien, p) for p in proprietaires), ZERO)
     total_temporel = sum((investissement_temporel_valorise(bien, p) for p in proprietaires), ZERO)
     revenu_net = revenu_net_total(bien)
+    charges_maison = charges_maison_total(bien)
+    # Pot réellement distribuable : revenus − commission − ce que la maison a
+    # déjà dépensé pour le bien. Peut devenir négatif (année de gros travaux) :
+    # c'est correct, ça signifie que les propriétaires ont collectivement
+    # « emprunté » à la maison plutôt que l'inverse.
+    revenu_distribuable = revenu_net - charges_maison
 
     lignes = []
     for part in parts:
@@ -93,7 +116,7 @@ def bilan_bien(bien: Bien) -> dict:
         fin = investissement_financier(bien, p)
         temp = investissement_temporel_valorise(bien, p)
         poids = poids_proprietaire(bien, p, parts, total_financier, total_temporel)
-        part_revenus = revenu_net * poids / Decimal(100)
+        part_revenus = revenu_distribuable * poids / Decimal(100)
         deja_verse = _dec(
             VersementRevenu.objects.filter(bien=bien, proprietaire=p).aggregate(t=Sum('montant'))['t']
         )
@@ -128,5 +151,10 @@ def bilan_bien(bien: Bien) -> dict:
         'revenu_brut_total': revenu_brut_total,
         'frais_total': frais_total,
         'cumul_gains_depenses': revenu_brut_total - frais_total,
+        # Détail du pot réparti entre propriétaires (revenu_net_total - charges
+        # payées par la maison) — exposé pour que le bilan reste vérifiable à
+        # l'oeil plutôt qu'une boîte noire.
+        'charges_maison': charges_maison,
+        'revenu_distribuable': revenu_distribuable,
         'proprietaires': lignes,
     }
