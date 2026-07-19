@@ -58,6 +58,8 @@ export interface Bien {
   description?: string;
   commission_gestion_pct?: number | string;
   commission_gestion_fixe?: number | string;
+  /** €/h pour valoriser le temps propriétaire dans le bilan. Vide à la création = SMIC/2 courant (calculé côté serveur). */
+  valorisation_heure_proprietaire?: number | string;
   parts?: PartProprietaire[];
   appartements?: Appartement[];
   created_at?: string;

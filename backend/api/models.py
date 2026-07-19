@@ -1,4 +1,12 @@
+from django.conf import settings
 from django.db import models
+
+
+def _valorisation_heure_defaut():
+    # Callable (pas une valeur figée à l'import) : chaque nouveau bien reprend
+    # le SMIC/2 courant au moment de sa création (settings.py, depuis .env),
+    # puis vit sa vie — modifiable ensuite pour ce bien uniquement.
+    return settings.VALORISATION_HEURE_PROPRIETAIRE
 
 
 class Proprietaire(models.Model):
@@ -45,9 +53,10 @@ class Bien(models.Model):
     La répartition entre co-propriétaires n'est plus un pourcentage fixé ici :
     c'est un grand livre de capital (api/bilan.py) qui la fait émerger des
     évènements financiers du bien (apports, revenus, dépenses, remboursements,
-    versements, travail valorisé). Seule la commission de gestion reste un
-    paramètre du bien (prélevée sur chaque séjour avant que le revenu
-    n'entre dans le grand livre)."""
+    versements, travail valorisé). La commission de gestion et le tarif de
+    valorisation du temps propriétaire restent des paramètres du bien —
+    chaque bien peut avoir sa propre politique (ex: un bien où la famille
+    valorise davantage le temps passé)."""
 
     nom = models.CharField(max_length=150)
     adresse = models.CharField(max_length=255, blank=True, default='')
@@ -57,6 +66,13 @@ class Bien(models.Model):
 
     commission_gestion_pct = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     commission_gestion_fixe = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    # €/h utilisé pour valoriser le temps qu'un propriétaire déclare sur ses
+    # tâches (api/bilan.py). Défaut = SMIC_HORAIRE_BRUT/2 courant au moment de
+    # la création de CE bien (voir _valorisation_heure_defaut ci-dessus) —
+    # librement modifiable ensuite, propre à ce bien.
+    valorisation_heure_proprietaire = models.DecimalField(
+        max_digits=8, decimal_places=2, default=_valorisation_heure_defaut,
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
 

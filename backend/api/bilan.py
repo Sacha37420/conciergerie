@@ -25,8 +25,6 @@ au prorata.
 """
 from decimal import Decimal, ROUND_HALF_UP
 
-from django.conf import settings
-
 from .models import Bien, Proprietaire, Reservation, Tache, Frais, Remboursement, ApportInitial, VersementRevenu
 
 ZERO = Decimal('0')
@@ -75,7 +73,7 @@ def _construire_evenements(bien: Bien) -> list[dict]:
         bien=bien, proprietaire_responsable__isnull=False,
         duree_heures__isnull=False, date_paiement__isnull=False,
     ):
-        valorisation = t.duree_heures * settings.VALORISATION_HEURE_PROPRIETAIRE
+        valorisation = t.duree_heures * bien.valorisation_heure_proprietaire
         # Investi par la personne (capital spécifique) ET payé par le
         # capital collectif (proportionnel) — s'annule sur le total, déplace
         # de la valeur vers elle. Même date : le spécifique est traité en
@@ -177,7 +175,7 @@ def bilan_bien(bien: Bien) -> dict:
         (f.montant_total for f in Frais.objects.filter(tache__bien=bien).select_related('tache')), ZERO,
     )
     travail_valorise_total = sum(
-        (t.duree_heures * settings.VALORISATION_HEURE_PROPRIETAIRE
+        (t.duree_heures * bien.valorisation_heure_proprietaire
          for t in Tache.objects.filter(bien=bien, proprietaire_responsable__isnull=False, duree_heures__isnull=False)),
         ZERO,
     )

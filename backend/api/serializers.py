@@ -1,6 +1,5 @@
 from decimal import Decimal
 
-from django.conf import settings
 from rest_framework import serializers
 from .models import (
     Proprietaire, Entreprise, Bien, PartProprietaire, Appartement, Reservation,
@@ -48,6 +47,7 @@ class BienSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'nom', 'adresse', 'ville', 'code_postal', 'description',
             'commission_gestion_pct', 'commission_gestion_fixe',
+            'valorisation_heure_proprietaire',
             'parts', 'appartements', 'created_at',
         ]
         read_only_fields = ['created_at']
@@ -137,7 +137,7 @@ class TacheSerializer(serializers.ModelSerializer):
     def get_cout_total(self, obj):
         total = sum((f.montant_total for f in obj.frais.all()), Decimal('0'))
         if obj.proprietaire_responsable_id and obj.duree_heures:
-            total += obj.duree_heures * settings.VALORISATION_HEURE_PROPRIETAIRE
+            total += obj.duree_heures * obj.bien.valorisation_heure_proprietaire
         return total
 
     def validate(self, attrs):

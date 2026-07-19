@@ -157,6 +157,17 @@
           travail valorisé — voir la page Bilan).
         </p>
 
+        <h4>Valorisation du temps propriétaire</h4>
+        <div class="form-group">
+          <label>Taux horaire (€/h)</label>
+          <input [(ngModel)]="bienForm.valorisation_heure_proprietaire" name="valorisation_heure_proprietaire" type="number" step="0.01" />
+          <small class="hint">
+            Sert à valoriser les heures qu'un propriétaire déclare sur ses tâches pour ce bien
+            (voir la page Bilan). Laisser vide à la création pour reprendre la moitié du SMIC
+            horaire brut en vigueur — modifiable ensuite, propre à ce bien.
+          </small>
+        </div>
+
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" (click)="closeBienModal()">Annuler</button>
           <button type="submit" class="btn btn-primary">Enregistrer</button>
