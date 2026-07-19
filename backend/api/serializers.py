@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.conf import settings
 from rest_framework import serializers
 from .models import (
     Proprietaire, Entreprise, Bien, PartProprietaire, Appartement, Reservation,
@@ -25,7 +26,7 @@ class PartProprietaireSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PartProprietaire
-        fields = ['id', 'bien', 'proprietaire', 'proprietaire_detail', 'quote_part_pct']
+        fields = ['id', 'bien', 'proprietaire', 'proprietaire_detail']
 
 
 class AppartementSerializer(serializers.ModelSerializer):
@@ -41,36 +42,15 @@ class AppartementSerializer(serializers.ModelSerializer):
 class BienSerializer(serializers.ModelSerializer):
     parts = PartProprietaireSerializer(many=True, read_only=True)
     appartements = AppartementSerializer(many=True, read_only=True)
-    quote_part_totale = serializers.DecimalField(max_digits=6, decimal_places=2, read_only=True)
 
     class Meta:
         model = Bien
         fields = [
             'id', 'nom', 'adresse', 'ville', 'code_postal', 'description',
             'commission_gestion_pct', 'commission_gestion_fixe',
-            'valorisation_heure_proprietaire',
-            'poids_quote_part_pct', 'poids_investissement_financier_pct',
-            'poids_investissement_temporel_pct',
-            'parts', 'appartements', 'quote_part_totale', 'created_at',
+            'parts', 'appartements', 'created_at',
         ]
         read_only_fields = ['created_at']
-
-    def validate(self, attrs):
-        poids_keys = [
-            'poids_quote_part_pct',
-            'poids_investissement_financier_pct',
-            'poids_investissement_temporel_pct',
-        ]
-        values = [
-            attrs[k] if k in attrs else getattr(self.instance, k, None)
-            for k in poids_keys
-        ]
-        if all(v is not None for v in values) and abs(sum(values) - 100) > 1:
-            raise serializers.ValidationError(
-                'La somme des poids (quote-part + investissement financier + '
-                'investissement temporel) doit être égale à 100.'
-            )
-        return attrs
 
 
 class ReservationSerializer(serializers.ModelSerializer):
@@ -80,13 +60,23 @@ class ReservationSerializer(serializers.ModelSerializer):
         model = Reservation
         fields = [
             'id', 'appartement', 'source', 'uid_externe', 'date_debut', 'date_fin',
-            'libelle', 'statut', 'montant_revenu', 'notes', 'parts_proprietaires',
-            'created_at', 'updated_at',
+            'libelle', 'statut', 'montant_revenu', 'date_paiement', 'notes',
+            'parts_proprietaires', 'created_at', 'updated_at',
         ]
         read_only_fields = ['uid_externe', 'created_at', 'updated_at']
 
+    def validate(self, attrs):
+        montant = attrs.get('montant_revenu', getattr(self.instance, 'montant_revenu', None))
+        date_paiement = attrs.get('date_paiement', getattr(self.instance, 'date_paiement', None))
+        if (montant is None) != (date_paiement is None):
+            raise serializers.ValidationError(
+                "Le revenu du séjour et sa date d'encaissement doivent être renseignés ensemble "
+                '(l\'un détermine quand ce revenu entre dans le grand livre du bilan).'
+            )
+        return attrs
+
     def get_parts_proprietaires(self, obj):
-        if obj.montant_revenu is None:
+        if obj.montant_revenu is None or obj.date_paiement is None:
             return []
         bien = obj.appartement.bien
         return [
@@ -137,7 +127,7 @@ class TacheSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tache
         fields = [
-            'id', 'bien', 'appartement', 'titre', 'description', 'date_prevue',
+            'id', 'bien', 'appartement', 'titre', 'description', 'date_prevue', 'date_paiement',
             'duree_heures', 'statut', 'proprietaire_responsable', 'entreprise_responsable',
             'proprietaire_responsable_detail', 'entreprise_responsable_detail',
             'frais', 'cout_total', 'created_by', 'created_at', 'updated_at',
@@ -145,7 +135,10 @@ class TacheSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_by', 'created_at', 'updated_at']
 
     def get_cout_total(self, obj):
-        return sum((f.montant_total for f in obj.frais.all()), Decimal('0'))
+        total = sum((f.montant_total for f in obj.frais.all()), Decimal('0'))
+        if obj.proprietaire_responsable_id and obj.duree_heures:
+            total += obj.duree_heures * settings.VALORISATION_HEURE_PROPRIETAIRE
+        return total
 
     def validate(self, attrs):
         proprietaire_resp = attrs.get(
@@ -162,6 +155,14 @@ class TacheSerializer(serializers.ModelSerializer):
         appartement = attrs.get('appartement', getattr(self.instance, 'appartement', None))
         if appartement and bien and appartement.bien_id != bien.id:
             raise serializers.ValidationError("L'appartement doit appartenir au bien sélectionné.")
+
+        duree = attrs.get('duree_heures', getattr(self.instance, 'duree_heures', None))
+        date_paiement = attrs.get('date_paiement', getattr(self.instance, 'date_paiement', None))
+        if proprietaire_resp and duree and not date_paiement:
+            raise serializers.ValidationError(
+                "La date de réalisation est requise pour valoriser le temps du propriétaire "
+                'dans le bilan (elle place l\'évènement dans le grand livre).'
+            )
         return attrs
 
 

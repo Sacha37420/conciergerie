@@ -36,7 +36,6 @@ export interface PartProprietaire {
   bien: number;
   proprietaire: number;
   proprietaire_detail?: Proprietaire;
-  quote_part_pct: number | string;
 }
 
 export interface Appartement {
@@ -59,13 +58,8 @@ export interface Bien {
   description?: string;
   commission_gestion_pct?: number | string;
   commission_gestion_fixe?: number | string;
-  valorisation_heure_proprietaire?: number | string;
-  poids_quote_part_pct?: number | string;
-  poids_investissement_financier_pct?: number | string;
-  poids_investissement_temporel_pct?: number | string;
   parts?: PartProprietaire[];
   appartements?: Appartement[];
-  quote_part_totale?: number | string;
   created_at?: string;
 }
 
@@ -85,6 +79,8 @@ export interface Reservation {
   libelle?: string;
   statut: 'confirmee' | 'annulee';
   montant_revenu?: number | string | null;
+  /** Date d'encaissement — requise avec montant_revenu (place l'évènement dans le grand livre du bilan). */
+  date_paiement?: string | null;
   notes?: string;
   parts_proprietaires?: PartReservation[];
   created_at?: string;
@@ -129,13 +125,9 @@ export interface VersementRevenu {
 export interface BilanLigne {
   proprietaire_id: number;
   proprietaire_nom: string;
-  quote_part_pct: number | string;
-  investissement_financier: number | string;
-  investissement_temporel_valorise: number | string;
-  poids_pct: number | string;
-  part_revenus_estimee: number | string;
-  deja_verse: number | string;
-  solde_du: number | string;
+  /** Capital possédé par cette personne dans le grand livre — la « quote-part » n'est plus stockée, c'est capital / capital_total. */
+  capital: number | string;
+  quote_part_pct: number | string | null;
 }
 
 export interface Bilan {
@@ -144,8 +136,7 @@ export interface Bilan {
   revenu_brut_total: number | string;
   frais_total: number | string;
   cumul_gains_depenses: number | string;
-  charges_maison: number | string;
-  revenu_distribuable: number | string;
+  capital_total: number | string;
   proprietaires: BilanLigne[];
 }
 
@@ -175,6 +166,8 @@ export interface Tache {
   description?: string;
   date_prevue?: string | null;
   duree_heures?: number | string | null;
+  /** Date de réalisation — requise si proprietaire_responsable + duree_heures sont renseignés (valorisation dans le grand livre). */
+  date_paiement?: string | null;
   statut: 'a_faire' | 'en_cours' | 'terminee' | 'annulee';
   proprietaire_responsable?: number | null;
   entreprise_responsable?: number | null;

@@ -81,7 +81,7 @@ export class TachesComponent implements OnInit {
   openCreateTache(): void {
     this.tacheForm = {
       bien: this.biens()[0]?.id, appartement: null, titre: '', description: '',
-      date_prevue: '', duree_heures: null, statut: 'a_faire',
+      date_prevue: '', duree_heures: null, date_paiement: null, statut: 'a_faire',
       proprietaire_responsable: null, entreprise_responsable: null,
     };
     this.responsableType = 'aucun';

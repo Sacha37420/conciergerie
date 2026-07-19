@@ -26,19 +26,19 @@
       <h3>{{ bl.bien_nom }}</h3>
       <dl class="dl-grid">
         <dt>Revenus (séjours renseignés)</dt> <dd>{{ bl.revenu_brut_total }} €</dd>
-        <dt>Total des frais (tous payeurs)</dt> <dd>{{ bl.frais_total }} €</dd>
+        <dt>Total des frais (tous payeurs + travail valorisé)</dt> <dd>{{ bl.frais_total }} €</dd>
         <dt>Cumul gains − dépenses</dt>
         <dd><strong>{{ bl.cumul_gains_depenses }} €</strong></dd>
-        <dt>Charges payées par la maison</dt> <dd>{{ bl.charges_maison }} €</dd>
-        <dt>Pot distribuable aux propriétaires</dt>
-        <dd><strong>{{ bl.revenu_distribuable }} €</strong></dd>
+        <dt>Capital total du bien</dt>
+        <dd><strong>{{ bl.capital_total }} €</strong></dd>
       </dl>
       <p class="hint">
-        Pot distribuable = revenus des séjours − commission de gestion −
-        charges payées par la maison. C'est ce montant qui est réparti
-        ci-dessous selon la clé de répartition du bien — les frais avancés
-        par un propriétaire lui-même n'en font pas partie : ils restent sa
-        propre créance (colonne « Investi »), pas une charge commune.
+        Le capital est un grand livre : les apports et revenus l'augmentent
+        (au prorata des parts actuelles), les dépenses maison et les
+        remboursements le diminuent (au prorata aussi — ils étaient
+        collectifs), les versements et le travail valorisé d'un propriétaire
+        déplacent spécifiquement sa part. La quote-part de chacun n'est plus
+        fixée : c'est simplement son capital rapporté au capital total.
       </p>
     </div>
 
@@ -47,13 +47,8 @@
         <thead>
           <tr>
             <th>Propriétaire</th>
+            <th>Capital</th>
             <th>Quote-part</th>
-            <th>Investi (non remboursé)</th>
-            <th>Investi (temps valorisé)</th>
-            <th>Poids répartition</th>
-            <th>Part revenus estimée</th>
-            <th>Déjà versé</th>
-            <th>Solde dû</th>
             @if (isManager) { <th></th> }
           </tr>
         </thead>
@@ -61,13 +56,8 @@
           @for (l of bl.proprietaires; track l.proprietaire_id) {
             <tr>
               <td><strong>{{ l.proprietaire_nom }}</strong></td>
-              <td>{{ l.quote_part_pct }}%</td>
-              <td>{{ l.investissement_financier }} €</td>
-              <td>{{ l.investissement_temporel_valorise }} €</td>
-              <td>{{ l.poids_pct }}%</td>
-              <td>{{ l.part_revenus_estimee }} €</td>
-              <td>{{ l.deja_verse }} €</td>
-              <td><strong>{{ l.solde_du }} €</strong></td>
+              <td><strong>{{ l.capital }} €</strong></td>
+              <td>{{ l.quote_part_pct !== null ? l.quote_part_pct + '%' : '—' }}</td>
               @if (isManager) {
                 <td class="actions">
                   <button class="btn btn-secondary btn-sm" (click)="openApport(l.proprietaire_id)">+ Apport</button>
@@ -80,8 +70,9 @@
       </table>
     </div>
     <p class="hint">
-      Le solde dû reste souvent élevé et jamais soldé si le revenu est réinvesti dans le bien —
-      c'est normal, pas une anomalie. Il ne diminue que lorsqu'un versement est enregistré.
+      Un capital élevé et jamais retiré est normal si le revenu est réinvesti dans le
+      bien — ce n'est pas une anomalie. Il ne diminue pour une personne en particulier
+      que lorsqu'un versement lui est fait.
     </p>
 
     @if (isManager) {

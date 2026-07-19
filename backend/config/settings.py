@@ -2,6 +2,8 @@
 Settings pour Conciergerie.
 Les variables sensibles sont lues depuis le fichier .env via python-decouple.
 """
+from decimal import Decimal
+
 from decouple import config
 
 # ── Sécurité ──────────────────────────────────────────────────────────────────
@@ -69,6 +71,16 @@ MEDIA_URL = f'{_script}/media/' if _script else '/media/'
 MAX_UPLOAD_BYTES = config('MAX_UPLOAD_BYTES', default=15728640, cast=int)  # 15 Mo
 DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_BYTES
 FILE_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_BYTES
+
+# ── Valorisation du temps propriétaire (bilan économique, api/bilan.py) ──────────
+# Coût horaire retenu pour valoriser le temps qu'un propriétaire déclare sur
+# ses tâches : la moitié du SMIC horaire brut français. C'est une valeur
+# légale révisée périodiquement (1er janvier + revalorisations ponctuelles en
+# cours d'année) — mettre à jour SMIC_HORAIRE_BRUT dans .env quand elle
+# change, pas cette valeur par défaut. ⚠ Vérifier qu'elle est à jour avant
+# de faire confiance aux montants du bilan.
+SMIC_HORAIRE_BRUT = config('SMIC_HORAIRE_BRUT', default='11.88', cast=Decimal)
+VALORISATION_HEURE_PROPRIETAIRE = SMIC_HORAIRE_BRUT / 2
 
 # ── Django REST Framework ──────────────────────────────────────────────────────
 REST_FRAMEWORK = {

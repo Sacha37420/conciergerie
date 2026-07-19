@@ -67,10 +67,10 @@ class BienViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def bilan(self, request, pk=None):
-        """GET /api/biens/<id>/bilan/ — répartition entre co-propriétaires
-        (quote-part + investissement financier + investissement temporel) et
-        P&L du bien. get_object() applique déjà le scoping IsManagerOrOwner :
-        un propriétaire ne peut demander le bilan que d'un bien qu'il possède."""
+        """GET /api/biens/<id>/bilan/ — grand livre de capital rejoué
+        (voir api/bilan.py) et P&L du bien. get_object() applique déjà le
+        scoping IsManagerOrOwner : un propriétaire ne peut demander le bilan
+        que d'un bien qu'il possède."""
         bien = self.get_object()
         data = bilan_module.bilan_bien(bien)
         if not is_manager(request):

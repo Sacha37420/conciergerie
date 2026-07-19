@@ -41,9 +41,13 @@ class Entreprise(models.Model):
 
 class Bien(models.Model):
     """Un bien immobilier, pouvant regrouper plusieurs appartements loués.
-    Porte aussi le paramétrage financier utilisé par le bilan économique
-    (commission de gestion, valorisation du temps propriétaire, pondération
-    de la clé de répartition — voir api/bilan.py)."""
+
+    La répartition entre co-propriétaires n'est plus un pourcentage fixé ici :
+    c'est un grand livre de capital (api/bilan.py) qui la fait émerger des
+    évènements financiers du bien (apports, revenus, dépenses, remboursements,
+    versements, travail valorisé). Seule la commission de gestion reste un
+    paramètre du bien (prélevée sur chaque séjour avant que le revenu
+    n'entre dans le grand livre)."""
 
     nom = models.CharField(max_length=150)
     adresse = models.CharField(max_length=255, blank=True, default='')
@@ -51,17 +55,8 @@ class Bien(models.Model):
     code_postal = models.CharField(max_length=10, blank=True, default='')
     description = models.TextField(blank=True, default='')
 
-    # ── Paramétrage financier (bilan économique) ────────────────────────────
     commission_gestion_pct = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     commission_gestion_fixe = models.DecimalField(max_digits=8, decimal_places=2, default=0)
-    valorisation_heure_proprietaire = models.DecimalField(max_digits=8, decimal_places=2, default=0)
-    # Pondération des 3 facteurs de répartition (quote-part, investissement
-    # financier non remboursé, investissement temporel valorisé). Doit
-    # sommer à 100 — vérifié côté serializer, pas en contrainte DB (édition
-    # progressive des propriétaires possible sans blocage transitoire).
-    poids_quote_part_pct = models.DecimalField(max_digits=5, decimal_places=2, default=100)
-    poids_investissement_financier_pct = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    poids_investissement_temporel_pct = models.DecimalField(max_digits=5, decimal_places=2, default=0)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -72,29 +67,25 @@ class Bien(models.Model):
     def __str__(self) -> str:
         return self.nom
 
-    @property
-    def quote_part_totale(self):
-        total = self.parts.aggregate(total=models.Sum('quote_part_pct'))['total']
-        return total or 0
-
 
 class PartProprietaire(models.Model):
-    """Quote-part (%) d'un propriétaire dans un bien — remplace un simple
-    M2M pour permettre une co-propriété non égalitaire (ex: 60/40)."""
+    """Rattache un propriétaire à un bien dont il possède une part de
+    capital (voir api/bilan.py — la part elle-même est dérivée du grand
+    livre, pas stockée ici). Sert aussi de base au cloisonnement du portail
+    (scoping.biens_du_proprietaire)."""
 
     bien = models.ForeignKey(Bien, on_delete=models.CASCADE, related_name='parts')
     proprietaire = models.ForeignKey(Proprietaire, on_delete=models.CASCADE, related_name='parts')
-    quote_part_pct = models.DecimalField(max_digits=5, decimal_places=2)
 
     class Meta:
         db_table = 'part_proprietaire'
-        ordering = ['bien', '-quote_part_pct']
+        ordering = ['bien']
         constraints = [
             models.UniqueConstraint(fields=['bien', 'proprietaire'], name='unique_part_par_bien_proprietaire'),
         ]
 
     def __str__(self) -> str:
-        return f'{self.proprietaire} — {self.bien} ({self.quote_part_pct}%)'
+        return f'{self.proprietaire} — {self.bien}'
 
 
 class Appartement(models.Model):
@@ -136,6 +127,11 @@ class Reservation(models.Model):
     libelle = models.CharField(max_length=255, blank=True, default='')
     statut = models.CharField(max_length=10, choices=STATUT_CHOICES, default='confirmee')
     montant_revenu = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    # Date d'encaissement effectif — requis dès que montant_revenu est
+    # renseigné (cf. ReservationSerializer.validate) : c'est elle qui place
+    # l'évènement « revenu » dans le grand livre du bilan (api/bilan.py),
+    # pas date_debut/date_fin (dates du séjour, pas du paiement).
+    date_paiement = models.DateField(null=True, blank=True)
     notes = models.TextField(blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -176,6 +172,12 @@ class Tache(models.Model):
     description = models.TextField(blank=True, default='')
     date_prevue = models.DateField(null=True, blank=True)
     duree_heures = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    # Date de réalisation effective — requise dès que proprietaire_responsable
+    # ET duree_heures sont renseignés (cf. TacheSerializer.validate) : c'est
+    # elle qui place le travail valorisé du propriétaire dans le grand livre
+    # du bilan (api/bilan.py). date_prevue reste la date planifiée, pas celle
+    # du travail réellement fait.
+    date_paiement = models.DateField(null=True, blank=True)
     statut = models.CharField(max_length=10, choices=STATUT_CHOICES, default='a_faire')
     proprietaire_responsable = models.ForeignKey(
         Proprietaire, on_delete=models.SET_NULL, null=True, blank=True, related_name='taches',
@@ -247,7 +249,10 @@ MOYEN_PAIEMENT_CHOICES = [
 class Remboursement(models.Model):
     """Versement effectué depuis le compte de la maison à un propriétaire,
     en règlement d'un ou plusieurs `Frais` qu'il a avancés. Un versement peut
-    solder plusieurs frais d'un coup."""
+    solder plusieurs frais d'un coup. Évènement du grand livre : réduit le
+    capital du bien au prorata de tout le monde (la dépense sous-jacente
+    était collective), pas spécifiquement celui du propriétaire remboursé —
+    celui-ci ne fait que récupérer l'argent qu'il avait avancé de sa poche."""
 
     proprietaire = models.ForeignKey(Proprietaire, on_delete=models.CASCADE, related_name='remboursements')
     frais = models.ManyToManyField(Frais, related_name='remboursements', blank=True)
@@ -268,8 +273,9 @@ class Remboursement(models.Model):
 
 class ApportInitial(models.Model):
     """Capital investi par un propriétaire hors du circuit Tache/Frais (ex :
-    apport à l'achat, gros travaux financés directement) — alimente
-    l'investissement financier utilisé par le bilan économique (api/bilan.py)."""
+    apport à l'achat, gros travaux financés directement). Évènement du grand
+    livre du bilan économique (api/bilan.py) : crédite spécifiquement le
+    capital de ce propriétaire, sans toucher à celui des autres."""
 
     bien = models.ForeignKey(Bien, on_delete=models.CASCADE, related_name='apports')
     proprietaire = models.ForeignKey(Proprietaire, on_delete=models.CASCADE, related_name='apports')
@@ -290,7 +296,10 @@ class ApportInitial(models.Model):
 class VersementRevenu(models.Model):
     """Part de revenus locatifs effectivement reversée à un propriétaire.
     Distinct de `Remboursement` (qui solde des `Frais` précis) : en pratique
-    souvent absent, le revenu étant le plus souvent entièrement réinvesti."""
+    souvent absent, le revenu étant le plus souvent entièrement réinvesti.
+    Évènement du grand livre : réduit spécifiquement le capital de ce
+    propriétaire (un retrait personnel, pas une dépense collective) — c'est
+    ce qui fait dériver la répartition entre co-propriétaires dans le temps."""
 
     bien = models.ForeignKey(Bien, on_delete=models.CASCADE, related_name='versements_revenu')
     proprietaire = models.ForeignKey(Proprietaire, on_delete=models.CASCADE, related_name='versements_revenu')

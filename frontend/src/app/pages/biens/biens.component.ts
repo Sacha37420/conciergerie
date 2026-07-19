@@ -27,7 +27,6 @@ export class BiensComponent implements OnInit {
   bienForm: Bien = { nom: '' };
 
   showPartModal = signal(false);
-  editingPart = signal<PartProprietaire | null>(null);
   partForm: Partial<PartProprietaire> = {};
   partBienId: number | null = null;
 
@@ -35,8 +34,6 @@ export class BiensComponent implements OnInit {
   editingAppart = signal<Appartement | null>(null);
   appartForm: Partial<Appartement> = {};
   appartBienId: number | null = null;
-
-  protected readonly Number = Number;
 
   get isManager(): boolean { return this.kc.isManager; }
 
@@ -68,9 +65,6 @@ export class BiensComponent implements OnInit {
     this.bienForm = {
       nom: '', adresse: '', ville: '', code_postal: '', description: '',
       commission_gestion_pct: 0, commission_gestion_fixe: 0,
-      valorisation_heure_proprietaire: 0,
-      poids_quote_part_pct: 100, poids_investissement_financier_pct: 0,
-      poids_investissement_temporel_pct: 0,
     };
     this.editingBien.set(null);
     this.showBienModal.set(true);
@@ -92,40 +86,30 @@ export class BiensComponent implements OnInit {
   }
 
   deleteBien(bien: Bien): void {
-    if (!confirm(`Supprimer ${bien.nom} ? Appartements, quote-parts et données rattachées seront aussi supprimés.`)) return;
+    if (!confirm(`Supprimer ${bien.nom} ? Appartements, co-propriétaires et données rattachées seront aussi supprimés.`)) return;
     this.api.deleteBien(bien.id!).subscribe({ next: () => this.load() });
   }
 
   closeBienModal(): void { this.showBienModal.set(false); }
 
-  // ── Quote-parts ─────────────────────────────────────────────────────────
+  // ── Co-propriétaires (PartProprietaire) ────────────────────────────────
+  // La part de chacun n'est plus saisie ici : elle émerge du grand livre de
+  // capital du bilan (apports, revenus, dépenses… — voir page Bilan).
   openCreatePart(bien: Bien): void {
     this.partBienId = bien.id!;
-    this.partForm = { bien: bien.id, proprietaire: undefined, quote_part_pct: 0 };
-    this.editingPart.set(null);
-    this.showPartModal.set(true);
-  }
-
-  openEditPart(part: PartProprietaire): void {
-    this.partBienId = part.bien;
-    this.partForm = { ...part };
-    this.editingPart.set(part);
+    this.partForm = { bien: bien.id, proprietaire: undefined };
     this.showPartModal.set(true);
   }
 
   savePart(): void {
-    const id = this.editingPart()?.id;
-    const obs = id
-      ? this.api.updatePartProprietaire(id, this.partForm)
-      : this.api.createPartProprietaire(this.partForm as PartProprietaire);
-    obs.subscribe({
+    this.api.createPartProprietaire(this.partForm as PartProprietaire).subscribe({
       next: () => { this.showPartModal.set(false); this.load(); },
-      error: () => this.error.set("Échec de l'enregistrement de la quote-part."),
+      error: () => this.error.set("Échec de l'ajout du co-propriétaire."),
     });
   }
 
   deletePart(part: PartProprietaire): void {
-    if (!confirm('Retirer cette quote-part ?')) return;
+    if (!confirm('Retirer ce co-propriétaire du bien ?')) return;
     this.api.deletePartProprietaire(part.id!).subscribe({ next: () => this.load() });
   }
 

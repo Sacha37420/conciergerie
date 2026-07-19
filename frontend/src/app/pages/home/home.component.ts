@@ -9,7 +9,7 @@ interface ResumeBien {
   reservationsAVenir: number;
   tachesEnCours: number;
   fraisNonRembourses: number;
-  soldeTotal: number | null;
+  capitalTotal: number | string;
 }
 
 @Component({
@@ -64,8 +64,7 @@ export class HomeComponent implements OnInit {
               const fraisNonRembourses = tousFrais.filter((f: Frais) =>
                 f.payeur === 'proprietaire' && !f.est_rembourse && idsTaches.has(f.tache),
               ).length;
-              const soldeTotal = r.bilan.proprietaires.reduce((s, l) => s + Number(l.solde_du), 0);
-              return { bien: biens[i], reservationsAVenir, tachesEnCours, fraisNonRembourses, soldeTotal };
+              return { bien: biens[i], reservationsAVenir, tachesEnCours, fraisNonRembourses, capitalTotal: r.bilan.capital_total };
             });
             this.resumes.set(resumes);
             this.loading.set(false);

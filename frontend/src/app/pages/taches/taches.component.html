@@ -205,6 +205,16 @@
               }
             </select>
           </div>
+          @if (tacheForm.duree_heures) {
+            <div class="form-group">
+              <label>Date de réalisation</label>
+              <input [(ngModel)]="tacheForm.date_paiement" name="date_paiement" type="date" />
+              <small class="hint">
+                Requise pour valoriser ce temps (SMIC/2) dans le grand livre du bilan — sinon
+                il n'est comptabilisé dans aucun capital.
+              </small>
+            </div>
+          }
         }
         @if (responsableType === 'entreprise') {
           <div class="form-group">

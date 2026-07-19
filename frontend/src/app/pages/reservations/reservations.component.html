@@ -63,7 +63,12 @@
                 @if (r.statut === 'confirmee') { <span class="badge badge-green">Confirmée</span> }
                 @else { <span class="badge badge-grey">Annulée</span> }
               </td>
-              <td>{{ r.montant_revenu ?? '—' }}</td>
+              <td>
+                @if (r.montant_revenu != null) {
+                  {{ r.montant_revenu }} €
+                  @if (r.date_paiement) { <span class="hint">({{ r.date_paiement }})</span> }
+                } @else { — }
+              </td>
               <td class="actions">
                 @if (isManager) {
                   <button class="btn btn-secondary btn-sm" (click)="openEdit(r)">Modifier</button>
@@ -125,11 +130,21 @@
           <label>Libellé</label>
           <input [(ngModel)]="form.libelle" name="libelle" />
         </div>
-        <div class="form-group">
-          <label>Revenu du séjour (€)</label>
-          <input [(ngModel)]="form.montant_revenu" name="montant_revenu" type="number" step="0.01" />
-          <small class="hint">Non fourni par la synchro Airbnb (iCal) — à saisir à la main si vous voulez suivre les revenus.</small>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Revenu du séjour (€)</label>
+            <input [(ngModel)]="form.montant_revenu" name="montant_revenu" type="number" step="0.01" />
+          </div>
+          <div class="form-group">
+            <label>Date d'encaissement</label>
+            <input [(ngModel)]="form.date_paiement" name="date_paiement" type="date" />
+          </div>
         </div>
+        <small class="hint">
+          Ni l'un ni l'autre ne sont fournis par la synchro Airbnb (iCal) — à saisir à la
+          main si vous voulez suivre les revenus. Les deux vont ensemble : la date
+          d'encaissement place ce revenu dans le grand livre du bilan.
+        </small>
         <div class="form-group">
           <label>Notes</label>
           <textarea [(ngModel)]="form.notes" name="notes"></textarea>

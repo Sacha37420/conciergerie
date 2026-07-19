@@ -65,7 +65,7 @@ export class ReservationsComponent implements OnInit {
   openCreate(): void {
     this.form = {
       appartement: this.appartements[0]?.id, source: 'direct', statut: 'confirmee',
-      date_debut: '', date_fin: '', libelle: '', montant_revenu: null, notes: '',
+      date_debut: '', date_fin: '', libelle: '', montant_revenu: null, date_paiement: null, notes: '',
     };
     this.editing.set(null);
     this.showModal.set(true);
