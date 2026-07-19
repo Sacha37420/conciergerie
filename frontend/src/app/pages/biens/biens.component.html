@@ -1,0 +1,254 @@
+<div class="page">
+  <div class="page-header">
+    <h2>Biens</h2>
+    @if (isManager) {
+      <button class="btn btn-primary" (click)="openCreateBien()">+ Nouveau bien</button>
+    }
+  </div>
+
+  @if (error()) {
+    <div class="alert alert-danger">{{ error() }}</div>
+  }
+
+  @if (loading()) {
+    <p class="loading">Chargement…</p>
+  } @else {
+    @for (bien of biens(); track bien.id) {
+      <div class="card bien-card">
+        <div class="bien-head" (click)="toggleExpand(bien)">
+          <div>
+            <h3>{{ bien.nom }}</h3>
+            <p class="hint">{{ bien.adresse }} {{ bien.ville }} {{ bien.code_postal }}</p>
+          </div>
+          <div class="bien-head-actions">
+            @if (Number(bien.quote_part_totale) !== 100) {
+              <span class="badge badge-orange" title="La somme des quote-parts devrait être 100%">
+                Quote-parts : {{ bien.quote_part_totale }}%
+              </span>
+            }
+            <span class="badge badge-blue">{{ bien.appartements?.length ?? 0 }} appartement(s)</span>
+            @if (isManager) {
+              <button class="btn btn-secondary btn-sm" (click)="$event.stopPropagation(); openEditBien(bien)">Modifier</button>
+              <button class="btn btn-danger btn-sm" (click)="$event.stopPropagation(); deleteBien(bien)">Supprimer</button>
+            }
+            <span class="expand-icon">{{ expandedId() === bien.id ? '▾' : '▸' }}</span>
+          </div>
+        </div>
+
+        @if (expandedId() === bien.id) {
+          <div class="bien-body">
+            @if (bien.description) {
+              <p>{{ bien.description }}</p>
+            }
+
+            <h4>
+              Co-propriétaires
+              @if (isManager) {
+                <button class="btn btn-secondary btn-sm" (click)="openCreatePart(bien)">+ Quote-part</button>
+              }
+            </h4>
+            <table class="data-table">
+              <thead><tr><th>Propriétaire</th><th>Quote-part</th><th></th></tr></thead>
+              <tbody>
+                @for (part of bien.parts; track part.id) {
+                  <tr>
+                    <td>{{ part.proprietaire_detail?.nom ?? nomProprietaire(part.proprietaire) }}</td>
+                    <td>{{ part.quote_part_pct }}%</td>
+                    <td class="actions">
+                      @if (isManager) {
+                        <button class="btn btn-secondary btn-sm" (click)="openEditPart(part)">Modifier</button>
+                        <button class="btn btn-danger btn-sm" (click)="deletePart(part)">Retirer</button>
+                      }
+                    </td>
+                  </tr>
+                }
+                @if (!bien.parts || bien.parts.length === 0) {
+                  <tr><td colspan="3" class="empty">Aucun propriétaire rattaché.</td></tr>
+                }
+              </tbody>
+            </table>
+
+            <h4>
+              Appartements
+              @if (isManager) {
+                <button class="btn btn-secondary btn-sm" (click)="openCreateAppart(bien)">+ Appartement</button>
+              }
+            </h4>
+            <table class="data-table">
+              <thead><tr><th>Nom</th><th>Capacité</th><th>Sync Airbnb</th><th></th></tr></thead>
+              <tbody>
+                @for (appart of bien.appartements; track appart.id) {
+                  <tr>
+                    <td><strong>{{ appart.nom }}</strong></td>
+                    <td>{{ appart.capacite ?? '—' }}</td>
+                    <td>
+                      @if (appart.airbnb_ical_url) {
+                        <span class="badge badge-green">iCal configuré</span>
+                      } @else {
+                        <span class="badge badge-grey">Non configuré</span>
+                      }
+                      @if (appart.dernier_sync_erreur) {
+                        <span class="badge badge-red" [title]="appart.dernier_sync_erreur">Erreur sync</span>
+                      }
+                    </td>
+                    <td class="actions">
+                      @if (isManager) {
+                        <button class="btn btn-secondary btn-sm" (click)="openEditAppart(appart)">Modifier</button>
+                        <button class="btn btn-danger btn-sm" (click)="deleteAppart(appart)">Supprimer</button>
+                      }
+                    </td>
+                  </tr>
+                }
+                @if (!bien.appartements || bien.appartements.length === 0) {
+                  <tr><td colspan="4" class="empty">Aucun appartement.</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+    }
+    @if (biens().length === 0) {
+      <p class="hint">Aucun bien pour l'instant.</p>
+    }
+  }
+</div>
+
+@if (showBienModal()) {
+  <div class="modal-backdrop" (click)="closeBienModal()">
+    <div class="modal modal-lg" (click)="$event.stopPropagation()">
+      <h3>{{ editingBien() ? 'Modifier' : 'Nouveau' }} bien</h3>
+      <form (ngSubmit)="saveBien()">
+        <div class="form-group">
+          <label>Nom *</label>
+          <input [(ngModel)]="bienForm.nom" name="nom" required />
+        </div>
+        <div class="form-group">
+          <label>Adresse</label>
+          <input [(ngModel)]="bienForm.adresse" name="adresse" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Ville</label>
+            <input [(ngModel)]="bienForm.ville" name="ville" />
+          </div>
+          <div class="form-group">
+            <label>Code postal</label>
+            <input [(ngModel)]="bienForm.code_postal" name="code_postal" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea [(ngModel)]="bienForm.description" name="description"></textarea>
+        </div>
+
+        <h4>Paramétrage financier</h4>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Commission de gestion (%)</label>
+            <input [(ngModel)]="bienForm.commission_gestion_pct" name="commission_gestion_pct" type="number" step="0.01" />
+          </div>
+          <div class="form-group">
+            <label>Commission de gestion fixe (€/séjour)</label>
+            <input [(ngModel)]="bienForm.commission_gestion_fixe" name="commission_gestion_fixe" type="number" step="0.01" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Valorisation heure propriétaire (€/h)</label>
+          <input [(ngModel)]="bienForm.valorisation_heure_proprietaire" name="valorisation_heure_proprietaire" type="number" step="0.01" />
+          <small class="hint">Convertit les heures qu'un propriétaire déclare sur ses tâches en équivalent investissement.</small>
+        </div>
+
+        <h4>Clé de répartition (doit sommer à 100)</h4>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Poids quote-part (%)</label>
+            <input [(ngModel)]="bienForm.poids_quote_part_pct" name="poids_quote_part_pct" type="number" step="0.01" />
+          </div>
+          <div class="form-group">
+            <label>Poids investissement financier (%)</label>
+            <input [(ngModel)]="bienForm.poids_investissement_financier_pct" name="poids_investissement_financier_pct" type="number" step="0.01" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Poids investissement temporel (%)</label>
+          <input [(ngModel)]="bienForm.poids_investissement_temporel_pct" name="poids_investissement_temporel_pct" type="number" step="0.01" />
+        </div>
+        <p class="hint">
+          Défaut recommandé : 100 / 0 / 0 (répartition pure à la quote-part). N'augmentez
+          les deux autres poids que si vous voulez valoriser l'investissement financier ou
+          temporel dans le bilan économique.
+        </p>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" (click)="closeBienModal()">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+}
+
+@if (showPartModal()) {
+  <div class="modal-backdrop" (click)="closePartModal()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>{{ editingPart() ? 'Modifier' : 'Nouvelle' }} quote-part</h3>
+      <form (ngSubmit)="savePart()">
+        <div class="form-group">
+          <label>Propriétaire *</label>
+          <select [(ngModel)]="partForm.proprietaire" name="proprietaire" required [disabled]="!!editingPart()">
+            <option [ngValue]="undefined" disabled>Choisir…</option>
+            @for (p of proprietaires(); track p.id) {
+              <option [ngValue]="p.id">{{ p.nom }}</option>
+            }
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Quote-part (%) *</label>
+          <input [(ngModel)]="partForm.quote_part_pct" name="quote_part_pct" type="number" step="0.01" required />
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" (click)="closePartModal()">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+}
+
+@if (showAppartModal()) {
+  <div class="modal-backdrop" (click)="closeAppartModal()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>{{ editingAppart() ? 'Modifier' : 'Nouvel' }} appartement</h3>
+      <form (ngSubmit)="saveAppart()">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Nom *</label>
+            <input [(ngModel)]="appartForm.nom" name="nom" required />
+          </div>
+          <div class="form-group">
+            <label>Capacité (personnes)</label>
+            <input [(ngModel)]="appartForm.capacite" name="capacite" type="number" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea [(ngModel)]="appartForm.description" name="description"></textarea>
+        </div>
+        <div class="form-group">
+          <label>URL iCal Airbnb</label>
+          <input [(ngModel)]="appartForm.airbnb_ical_url" name="airbnb_ical_url" placeholder="https://www.airbnb.fr/calendar/ical/..." />
+          <small class="hint">
+            Airbnb → Annonce → Calendrier → Disponibilité → Synchroniser les calendriers →
+            Exporter le calendrier. Lecture seule : dates occupées uniquement, jamais le nom
+            du voyageur ni le montant du séjour.
+          </small>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" (click)="closeAppartModal()">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+}

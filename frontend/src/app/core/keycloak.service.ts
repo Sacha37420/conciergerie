@@ -51,6 +51,16 @@ export class KeycloakService {
     return (this.kc?.tokenParsed as Record<string, unknown>)?.['groups'] as string[] ?? [];
   }
 
+  /** Gestionnaire (groupe `admins`) — accès complet, cf. api/permissions.py côté backend. */
+  get isManager(): boolean {
+    return this.groups.includes('admins');
+  }
+
+  /** Propriétaire (groupe `proprietaires`) — accès scopé à ses propres biens. */
+  get isOwner(): boolean {
+    return this.groups.includes('proprietaires');
+  }
+
   /** Token d'accès courant (Bearer). */
   getToken(): string | undefined {
     return this.kc?.token;

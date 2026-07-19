@@ -35,4 +35,7 @@ urlpatterns = [
     path('api/', include('api.urls')),
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('api/docs/', CustomSwaggerUIView.as_view(), name='swagger-ui'),
+    # Sert les factures uploadées. Le préfixe /conciergerie-api est retiré par
+    # Caddy (handle_path) : côté Django le PATH_INFO commence donc par 'media/'.
+    path('media/<path:path>', static_serve, {'document_root': settings.MEDIA_ROOT}),
 ]

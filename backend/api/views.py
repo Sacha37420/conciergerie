@@ -1,50 +1,93 @@
-from rest_framework.views import APIView
+from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
-from rest_framework import generics
+from rest_framework.views import APIView
 from rest_framework.response import Response
-from .models import Department, UserRecord
-from .serializers import DepartmentSerializer, UserRecordSerializer
+
+from .models import Proprietaire, Entreprise, Bien, PartProprietaire, Appartement
+from .serializers import (
+    ProprietaireSerializer, EntrepriseSerializer, BienSerializer,
+    PartProprietaireSerializer, AppartementSerializer,
+)
+from .permissions import IsManager, IsManagerOrOwner
+from .scoping import is_manager, proprietaire_for, biens_du_proprietaire
 
 
 class MeView(APIView):
-    """
-    permission_classes = [IsAuthenticated]
-    GET /api/me/
-    Retourne l'identité de l'utilisateur authentifié (depuis le JWT + DB).
-    Crée un UserRecord à la première visite.
-    """
+    """GET /api/me/ — identité + rôle métier de l'utilisateur authentifié."""
 
     def get(self, request):
-        email    = request.user.email
-        username = request.user.username
-        groups   = request.user.claims.get('groups', [])
-
-        record, created = UserRecord.objects.get_or_create(
-            email=email,
-            defaults={'display_name': username},
-        )
-
+        groups = request.user.claims.get('groups', [])
+        proprietaire = proprietaire_for(request.user)
         return Response({
-            'email':        email,
-            'username':     username,
-            'groups':       groups,
-            'display_name': record.display_name,
-            'department':   DepartmentSerializer(record.department).data
-                            if record.department else None,
-            'registered_at': record.registered_at,
-            'is_new':        created,
+            'email': request.user.email,
+            'username': request.user.username,
+            'groups': groups,
+            'is_manager': is_manager(request),
+            'proprietaire': ProprietaireSerializer(proprietaire).data if proprietaire else None,
         })
 
 
-class DepartmentListView(generics.ListAPIView):
-    """GET /api/departments/ — liste tous les départements."""
+class ProprietaireViewSet(viewsets.ModelViewSet):
+    """CRUD réservé au gestionnaire — un propriétaire ne s'auto-déclare pas."""
+    queryset = Proprietaire.objects.all()
+    serializer_class = ProprietaireSerializer
+    permission_classes = [IsAuthenticated, IsManager]
 
-    queryset         = Department.objects.all()
-    serializer_class = DepartmentSerializer
+
+class EntrepriseViewSet(viewsets.ModelViewSet):
+    queryset = Entreprise.objects.all()
+    serializer_class = EntrepriseSerializer
+    permission_classes = [IsAuthenticated, IsManager]
 
 
-class UserListView(generics.ListAPIView):
-    """GET /api/users/ — liste tous les utilisateurs enregistrés."""
+class BienViewSet(viewsets.ModelViewSet):
+    serializer_class = BienSerializer
 
-    queryset         = UserRecord.objects.select_related('department')
-    serializer_class = UserRecordSerializer
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsAuthenticated(), IsManagerOrOwner()]
+        return [IsAuthenticated(), IsManager()]
+
+    def get_queryset(self):
+        qs = Bien.objects.prefetch_related('parts__proprietaire', 'appartements')
+        if not is_manager(self.request):
+            qs = qs.filter(pk__in=biens_du_proprietaire(self.request.user))
+        return qs
+
+
+class PartProprietaireViewSet(viewsets.ModelViewSet):
+    """Quote-parts — écriture réservée au gestionnaire (accord familial
+    constaté, pas auto-déclaré). Un propriétaire peut lire les siennes."""
+    serializer_class = PartProprietaireSerializer
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsAuthenticated(), IsManagerOrOwner()]
+        return [IsAuthenticated(), IsManager()]
+
+    def get_queryset(self):
+        qs = PartProprietaire.objects.select_related('bien', 'proprietaire')
+        if not is_manager(self.request):
+            qs = qs.filter(bien__in=biens_du_proprietaire(self.request.user))
+        bien_id = self.request.query_params.get('bien')
+        if bien_id:
+            qs = qs.filter(bien_id=bien_id)
+        return qs
+
+
+class AppartementViewSet(viewsets.ModelViewSet):
+    serializer_class = AppartementSerializer
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsAuthenticated(), IsManagerOrOwner()]
+        return [IsAuthenticated(), IsManager()]
+
+    def get_queryset(self):
+        qs = Appartement.objects.select_related('bien')
+        if not is_manager(self.request):
+            qs = qs.filter(bien__in=biens_du_proprietaire(self.request.user))
+        bien_id = self.request.query_params.get('bien')
+        if bien_id:
+            qs = qs.filter(bien_id=bien_id)
+        return qs

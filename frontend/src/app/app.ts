@@ -31,10 +31,20 @@ export class AppComponent {
   protected noop = (): void => {};
   protected closeMobileFn = (): void => this.closeMobile();
 
-  readonly navItems: NavItem[] = [
-    { path: '/',        label: 'Accueil', abbr: 'Ac', exact: true },
-    { path: '/profile', label: 'Profil',  abbr: 'Pr' },
-  ];
+  get navItems(): NavItem[] {
+    const items: NavItem[] = [
+      { path: '/',      label: 'Accueil', abbr: 'Ac', exact: true },
+      { path: '/biens', label: 'Biens',   abbr: 'Bi' },
+    ];
+    if (this.kc.isManager) {
+      items.push(
+        { path: '/proprietaires', label: 'Propriétaires', abbr: 'Pp' },
+        { path: '/entreprises',   label: 'Entreprises',   abbr: 'En' },
+      );
+    }
+    items.push({ path: '/profile', label: 'Profil', abbr: 'Pr' });
+    return items;
+  }
 
   @ViewChild('closeBtn') private closeBtnRef?: ElementRef<HTMLButtonElement>;
   @ViewChild('burgerBtn') private burgerBtnRef?: ElementRef<HTMLButtonElement>;

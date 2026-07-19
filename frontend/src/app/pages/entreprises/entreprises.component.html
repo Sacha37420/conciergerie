@@ -1,0 +1,85 @@
+<div class="page">
+  <div class="page-header">
+    <h2>Entreprises</h2>
+    <button class="btn btn-primary" (click)="openCreate()">+ Nouvelle entreprise</button>
+  </div>
+
+  @if (error()) {
+    <div class="alert alert-danger">{{ error() }}</div>
+  }
+
+  @if (loading()) {
+    <p class="loading">Chargement…</p>
+  } @else {
+    <div class="card" style="padding:0">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Nom</th>
+            <th>Contact</th>
+            <th>Téléphone</th>
+            <th>E-mail</th>
+            <th>Spécialité</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (item of items(); track item.id) {
+            <tr>
+              <td><strong>{{ item.nom }}</strong></td>
+              <td>{{ item.contact_nom || '—' }}</td>
+              <td>{{ item.telephone || '—' }}</td>
+              <td>{{ item.email || '—' }}</td>
+              <td>{{ item.specialite || '—' }}</td>
+              <td class="actions">
+                <button class="btn btn-secondary btn-sm" (click)="openEdit(item)">Modifier</button>
+                <button class="btn btn-danger btn-sm" (click)="delete(item)">Supprimer</button>
+              </td>
+            </tr>
+          }
+          @if (items().length === 0) {
+            <tr><td colspan="6" class="empty">Aucune entreprise enregistrée.</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</div>
+
+@if (showModal()) {
+  <div class="modal-backdrop" (click)="close()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>{{ editing() ? 'Modifier' : 'Nouvelle' }} entreprise</h3>
+      <form (ngSubmit)="save()">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Nom *</label>
+            <input [(ngModel)]="form.nom" name="nom" required />
+          </div>
+          <div class="form-group">
+            <label>Spécialité</label>
+            <input [(ngModel)]="form.specialite" name="specialite" placeholder="Ménage, plomberie…" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Contact</label>
+            <input [(ngModel)]="form.contact_nom" name="contact_nom" />
+          </div>
+          <div class="form-group">
+            <label>Téléphone</label>
+            <input [(ngModel)]="form.telephone" name="telephone" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>E-mail</label>
+          <input [(ngModel)]="form.email" name="email" type="email" />
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" (click)="close()">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+}

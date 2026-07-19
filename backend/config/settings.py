@@ -59,6 +59,17 @@ DB_SCHEMA = _DB_SCHEMA
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 USE_TZ = True
 
+# ── Médias (factures uploadées sur les Frais) ───────────────────────────────────
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+_script = FORCE_SCRIPT_NAME.rstrip('/')
+# Préfixe le chemin public par SCRIPT_NAME pour rester correct derrière Caddy.
+MEDIA_URL = f'{_script}/media/' if _script else '/media/'
+
+# ── Limites d'upload ─────────────────────────────────────────────────────────────
+MAX_UPLOAD_BYTES = config('MAX_UPLOAD_BYTES', default=15728640, cast=int)  # 15 Mo
+DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_BYTES
+FILE_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_BYTES
+
 # ── Django REST Framework ──────────────────────────────────────────────────────
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
