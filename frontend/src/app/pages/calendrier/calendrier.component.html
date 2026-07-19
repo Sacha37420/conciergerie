@@ -1,0 +1,68 @@
+<div class="page">
+  <div class="page-header">
+    <h2>Calendrier</h2>
+  </div>
+
+  @if (error()) {
+    <div class="alert alert-danger">{{ error() }}</div>
+  }
+
+  <div class="filters">
+    <label>
+      Bien :
+      <select [(ngModel)]="selectedBienId" (ngModelChange)="load()">
+        @for (b of biens(); track b.id) {
+          <option [ngValue]="b.id">{{ b.nom }}</option>
+        }
+      </select>
+    </label>
+    <div class="cal-nav">
+      <button class="btn btn-secondary btn-sm" (click)="prevMonth()">◂</button>
+      <button class="btn btn-secondary btn-sm" (click)="goToday()">Aujourd'hui</button>
+      <button class="btn btn-secondary btn-sm" (click)="nextMonth()">▸</button>
+      <strong class="cal-month-label">{{ monthLabel }}</strong>
+    </div>
+  </div>
+
+  <div class="cal-legend">
+    <span><span class="cal-swatch cal-swatch-airbnb"></span> Réservation Airbnb</span>
+    <span><span class="cal-swatch cal-swatch-direct"></span> Réservation directe</span>
+    <span><span class="cal-swatch cal-swatch-annulee"></span> Annulée</span>
+    <span><span class="cal-swatch cal-swatch-tache"></span> Tâche</span>
+  </div>
+
+  @if (loading()) {
+    <p class="loading">Chargement…</p>
+  } @else {
+    <div class="calendrier-scroll">
+      <div class="calendrier-grid" [style.--num-days]="daysInMonth.length">
+        <div class="cal-row cal-header">
+          <div class="cal-label"></div>
+          @for (day of daysInMonth; track day.getTime()) {
+            <div class="cal-day-header" [class.today]="isToday(day)">{{ day.getDate() }}</div>
+          }
+        </div>
+        @for (ligne of lignes; track ligne.appartementId) {
+          <div class="cal-row">
+            <div class="cal-label">{{ ligne.label }}</div>
+            @for (day of daysInMonth; track day.getTime()) {
+              <div class="cal-cell" [class.today]="isToday(day)">
+                @if (reservationPour(ligne.appartementId, day); as r) {
+                  <div
+                    class="cal-reservation"
+                    [class.annulee]="r.statut === 'annulee'"
+                    [class.airbnb]="r.source === 'airbnb'"
+                    [title]="(r.libelle || r.source) + ' · ' + r.date_debut + ' → ' + r.date_fin"
+                  ></div>
+                }
+                @for (t of tachesPour(ligne.appartementId, day); track t.id) {
+                  <div class="cal-tache" [title]="t.titre">{{ t.titre }}</div>
+                }
+              </div>
+            }
+          </div>
+        }
+      </div>
+    </div>
+  }
+</div>

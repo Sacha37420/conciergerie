@@ -8,10 +8,12 @@ import { ReservationsComponent } from './pages/reservations/reservations.compone
 import { TachesComponent } from './pages/taches/taches.component';
 import { RemboursementsComponent } from './pages/remboursements/remboursements.component';
 import { BilanComponent } from './pages/bilan/bilan.component';
+import { CalendrierComponent } from './pages/calendrier/calendrier.component';
 
 export const routes: Routes = [
   { path: '',              component: HomeComponent },
   { path: 'biens',         component: BiensComponent },
+  { path: 'calendrier',    component: CalendrierComponent },
   { path: 'reservations',  component: ReservationsComponent },
   { path: 'taches',        component: TachesComponent },
   { path: 'remboursements', component: RemboursementsComponent },

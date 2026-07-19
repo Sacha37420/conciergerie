@@ -1,7 +1,34 @@
 .page-home {
   display: flex;
-  justify-content: center;
-  padding: var(--space-7) var(--space-4);
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-7) var(--space-4) var(--space-4);
+  gap: var(--space-6);
+}
+
+.dashboard {
+  width: 100%;
+  max-width: 1200px;
+  padding: 0;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-4);
+}
+
+.dashboard-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s;
+
+  &:hover { border-color: var(--accent); }
+
+  h3 { margin: 0 0 var(--space-3); }
+
+  .dl-grid { grid-template-columns: 1fr auto; margin: 0; }
 }
 
 .hero-card {

@@ -35,6 +35,7 @@ export class AppComponent {
     const items: NavItem[] = [
       { path: '/',             label: 'Accueil',      abbr: 'Ac', exact: true },
       { path: '/biens',        label: 'Biens',        abbr: 'Bi' },
+      { path: '/calendrier',   label: 'Calendrier',   abbr: 'Ca' },
       { path: '/reservations', label: 'Réservations', abbr: 'Ré' },
       { path: '/taches',       label: 'Tâches',       abbr: 'Tâ' },
       { path: '/remboursements', label: 'Remboursements', abbr: 'Rb' },

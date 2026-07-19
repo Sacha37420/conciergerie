@@ -13,4 +13,26 @@
 
     <a routerLink="/profile" class="btn-primary">Voir mon profil →</a>
   </div>
+
+  <div class="page dashboard">
+    @if (loading()) {
+      <p class="loading">Chargement du tableau de bord…</p>
+    } @else if (resumes().length === 0) {
+      <p class="hint" style="text-align:center">Aucun bien accessible pour l'instant.</p>
+    } @else {
+      <div class="dashboard-grid">
+        @for (r of resumes(); track r.bien.id) {
+          <a class="card dashboard-card" [routerLink]="['/biens']">
+            <h3>{{ r.bien.nom }}</h3>
+            <dl class="dl-grid">
+              <dt>Réservations (30 j)</dt>       <dd>{{ r.reservationsAVenir }}</dd>
+              <dt>Tâches en cours</dt>           <dd>{{ r.tachesEnCours }}</dd>
+              <dt>Frais non remboursés</dt>      <dd>{{ r.fraisNonRembourses }}</dd>
+              <dt>Solde bilan</dt>               <dd>{{ r.soldeTotal }} €</dd>
+            </dl>
+          </a>
+        }
+      </div>
+    }
+  </div>
 </main>

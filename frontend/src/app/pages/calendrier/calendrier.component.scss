@@ -1,0 +1,121 @@
+.cal-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.cal-month-label {
+  margin-left: var(--space-2);
+  text-transform: capitalize;
+}
+
+.cal-legend {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-mute);
+
+  span { display: inline-flex; align-items: center; gap: 6px; }
+}
+
+.cal-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+
+  &-airbnb   { background: var(--danger); }
+  &-direct   { background: var(--accent); }
+  &-annulee  { background: var(--border); }
+  &-tache    { background: var(--warning); }
+}
+
+.calendrier-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.calendrier-grid {
+  min-width: max-content;
+}
+
+.cal-row {
+  display: grid;
+  grid-template-columns: 160px repeat(var(--num-days), minmax(34px, 1fr));
+  border-bottom: 1px solid var(--border);
+
+  &:last-child { border-bottom: none; }
+}
+
+.cal-header {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 1;
+  font-weight: 700;
+}
+
+.cal-label {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  border-right: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  position: sticky;
+  left: 0;
+  background: var(--card);
+  z-index: 1;
+}
+
+.cal-header .cal-label { background: var(--bg); }
+
+.cal-day-header, .cal-cell {
+  border-right: 1px solid var(--border);
+  min-height: 40px;
+}
+
+.cal-day-header {
+  padding: var(--space-2) 2px;
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--text-mute);
+
+  &.today { color: var(--accent); }
+}
+
+.cal-cell {
+  position: relative;
+  padding: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  &.today { background: var(--accent-tint); }
+}
+
+.cal-reservation {
+  height: 10px;
+  border-radius: 3px;
+  background: var(--accent);
+
+  &.airbnb { background: var(--danger); }
+  &.annulee { background: var(--border); opacity: 0.6; }
+}
+
+.cal-tache {
+  font-size: 10px;
+  line-height: 1.3;
+  background: var(--warning-tint);
+  color: var(--warning);
+  border-radius: 3px;
+  padding: 1px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
