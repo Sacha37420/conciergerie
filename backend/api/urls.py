@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     MeView, ProprietaireViewSet, EntrepriseViewSet, BienViewSet,
     PartProprietaireViewSet, AppartementViewSet, ReservationViewSet, SyncAirbnbView,
+    TacheViewSet, FraisViewSet,
 )
 
 router = DefaultRouter()
@@ -12,6 +13,8 @@ router.register('biens', BienViewSet, basename='bien')
 router.register('parts-proprietaire', PartProprietaireViewSet, basename='part-proprietaire')
 router.register('appartements', AppartementViewSet, basename='appartement')
 router.register('reservations', ReservationViewSet, basename='reservation')
+router.register('taches', TacheViewSet, basename='tache')
+router.register('frais', FraisViewSet, basename='frais')
 
 urlpatterns = [
     path('me/', MeView.as_view()),

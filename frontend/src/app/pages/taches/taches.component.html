@@ -1,0 +1,297 @@
+<div class="page">
+  <div class="page-header">
+    <h2>Tâches</h2>
+    @if (isManager) {
+      <button class="btn btn-primary" (click)="openCreateTache()">+ Nouvelle tâche</button>
+    }
+  </div>
+
+  @if (error()) {
+    <div class="alert alert-danger">{{ error() }}</div>
+  }
+
+  <div class="filters">
+    <label>
+      Bien :
+      <select [(ngModel)]="filterBienId" (ngModelChange)="load()">
+        <option value="">Tous</option>
+        @for (b of biens(); track b.id) {
+          <option [ngValue]="b.id">{{ b.nom }}</option>
+        }
+      </select>
+    </label>
+    <label>
+      Statut :
+      <select [(ngModel)]="filterStatut" (ngModelChange)="load()">
+        <option value="">Tous</option>
+        <option value="a_faire">À faire</option>
+        <option value="en_cours">En cours</option>
+        <option value="terminee">Terminée</option>
+        <option value="annulee">Annulée</option>
+      </select>
+    </label>
+  </div>
+
+  @if (loading()) {
+    <p class="loading">Chargement…</p>
+  } @else {
+    @for (t of taches(); track t.id) {
+      <div class="card bien-card">
+        <div class="bien-head" (click)="toggleExpand(t)">
+          <div>
+            <h3>{{ t.titre }}</h3>
+            <p class="hint">
+              {{ nomBien(t.bien) }}
+              @if (t.date_prevue) { · {{ t.date_prevue }} }
+              @if (t.proprietaire_responsable_detail) { · {{ t.proprietaire_responsable_detail.nom }} }
+              @if (t.entreprise_responsable_detail) { · {{ t.entreprise_responsable_detail.nom }} }
+            </p>
+          </div>
+          <div class="bien-head-actions">
+            @switch (t.statut) {
+              @case ('a_faire')  { <span class="badge badge-grey">À faire</span> }
+              @case ('en_cours') { <span class="badge badge-blue">En cours</span> }
+              @case ('terminee') { <span class="badge badge-green">Terminée</span> }
+              @case ('annulee')  { <span class="badge badge-red">Annulée</span> }
+            }
+            @if (t.cout_total) {
+              <span class="badge badge-orange">{{ t.cout_total }} €</span>
+            }
+            @if (isManager) {
+              <button class="btn btn-secondary btn-sm" (click)="$event.stopPropagation(); openEditTache(t)">Modifier</button>
+              <button class="btn btn-danger btn-sm" (click)="$event.stopPropagation(); deleteTache(t)">Supprimer</button>
+            }
+            <span class="expand-icon">{{ expandedId() === t.id ? '▾' : '▸' }}</span>
+          </div>
+        </div>
+
+        @if (expandedId() === t.id) {
+          <div class="bien-body">
+            @if (t.description) { <p>{{ t.description }}</p> }
+            @if (t.duree_heures) { <p class="hint">Durée déclarée : {{ t.duree_heures }} h</p> }
+
+            <h4>
+              Frais
+              <button class="btn btn-secondary btn-sm" (click)="openCreateFrais(t)">+ Frais</button>
+            </h4>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Libellé</th><th>Fixe</th><th>Horaire</th><th>Total</th>
+                  <th>Payeur</th><th>Facture</th><th>Remboursé</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (f of t.frais; track f.id) {
+                  <tr>
+                    <td>{{ f.libelle }}</td>
+                    <td>{{ f.montant_fixe }} €</td>
+                    <td>{{ f.taux_horaire }} €/h</td>
+                    <td><strong>{{ f.montant_total }} €</strong></td>
+                    <td>
+                      @if (f.payeur === 'maison') {
+                        <span class="badge badge-blue">Maison</span>
+                      } @else {
+                        <span class="badge badge-orange">{{ f.proprietaire_payeur_detail?.nom ?? 'Propriétaire' }}</span>
+                      }
+                    </td>
+                    <td>
+                      @if (f.facture) {
+                        <a [href]="f.facture" target="_blank" rel="noopener">Voir</a>
+                      } @else { — }
+                    </td>
+                    <td>
+                      @if (f.payeur === 'proprietaire') {
+                        @if (f.est_rembourse) { <span class="badge badge-green">Oui</span> }
+                        @else { <span class="badge badge-grey">Non</span> }
+                      } @else { — }
+                    </td>
+                    <td class="actions">
+                      @if (peutModifierFrais(f)) {
+                        <button class="btn btn-secondary btn-sm" (click)="openEditFrais(f)">Modifier</button>
+                        <button class="btn btn-danger btn-sm" (click)="deleteFrais(f)">Supprimer</button>
+                      }
+                    </td>
+                  </tr>
+                }
+                @if (!t.frais || t.frais.length === 0) {
+                  <tr><td colspan="8" class="empty">Aucun frais.</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+    }
+    @if (taches().length === 0) {
+      <p class="hint">Aucune tâche pour l'instant.</p>
+    }
+  }
+</div>
+
+@if (showTacheModal()) {
+  <div class="modal-backdrop" (click)="closeTacheModal()">
+    <div class="modal modal-lg" (click)="$event.stopPropagation()">
+      <h3>{{ editingTache() ? 'Modifier' : 'Nouvelle' }} tâche</h3>
+      <form (ngSubmit)="saveTache()">
+        <div class="form-group">
+          <label>Titre *</label>
+          <input [(ngModel)]="tacheForm.titre" name="titre" required />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Bien *</label>
+            <select [(ngModel)]="tacheForm.bien" name="bien" required>
+              @for (b of biens(); track b.id) {
+                <option [ngValue]="b.id">{{ b.nom }}</option>
+              }
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Appartement</label>
+            <select [(ngModel)]="tacheForm.appartement" name="appartement">
+              <option [ngValue]="null">Bien entier</option>
+              @for (a of appartementsDuBien; track a.id) {
+                <option [ngValue]="a.id">{{ a.nom }}</option>
+              }
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea [(ngModel)]="tacheForm.description" name="description"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Date prévue</label>
+            <input [(ngModel)]="tacheForm.date_prevue" name="date_prevue" type="date" />
+          </div>
+          <div class="form-group">
+            <label>Durée (h)</label>
+            <input [(ngModel)]="tacheForm.duree_heures" name="duree_heures" type="number" step="0.25" />
+            <small class="hint">Sert au calcul des frais horaires et à l'investissement temporel du bilan.</small>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Statut</label>
+          <select [(ngModel)]="tacheForm.statut" name="statut">
+            <option value="a_faire">À faire</option>
+            <option value="en_cours">En cours</option>
+            <option value="terminee">Terminée</option>
+            <option value="annulee">Annulée</option>
+          </select>
+        </div>
+
+        <h4>Responsable</h4>
+        <div class="form-group">
+          <label>
+            <input type="radio" name="responsableType" value="aucun" [(ngModel)]="responsableType" (ngModelChange)="onResponsableTypeChange()" />
+            Aucun
+          </label>
+          <label>
+            <input type="radio" name="responsableType" value="proprietaire" [(ngModel)]="responsableType" (ngModelChange)="onResponsableTypeChange()" />
+            Un propriétaire
+          </label>
+          <label>
+            <input type="radio" name="responsableType" value="entreprise" [(ngModel)]="responsableType" (ngModelChange)="onResponsableTypeChange()" />
+            Une entreprise extérieure
+          </label>
+        </div>
+        @if (responsableType === 'proprietaire') {
+          <div class="form-group">
+            <select [(ngModel)]="tacheForm.proprietaire_responsable" name="proprietaire_responsable">
+              @for (p of proprietaires(); track p.id) {
+                <option [ngValue]="p.id">{{ p.nom }}</option>
+              }
+            </select>
+          </div>
+        }
+        @if (responsableType === 'entreprise') {
+          <div class="form-group">
+            <select [(ngModel)]="tacheForm.entreprise_responsable" name="entreprise_responsable">
+              @for (e of entreprises(); track e.id) {
+                <option [ngValue]="e.id">{{ e.nom }}</option>
+              }
+            </select>
+          </div>
+        }
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" (click)="closeTacheModal()">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+}
+
+@if (showFraisModal()) {
+  <div class="modal-backdrop" (click)="closeFraisModal()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>{{ editingFrais() ? 'Modifier' : 'Nouveau' }} frais</h3>
+      <form (ngSubmit)="saveFrais()">
+        <div class="form-group">
+          <label>Libellé *</label>
+          <input [(ngModel)]="fraisForm.libelle" name="libelle" required />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Montant fixe (€)</label>
+            <input [(ngModel)]="fraisForm.montant_fixe" name="montant_fixe" type="number" step="0.01" />
+          </div>
+          <div class="form-group">
+            <label>Taux horaire (€/h)</label>
+            <input [(ngModel)]="fraisForm.taux_horaire" name="taux_horaire" type="number" step="0.01" />
+          </div>
+        </div>
+
+        @if (isManager) {
+          <div class="form-row">
+            <div class="form-group">
+              <label>Payeur</label>
+              <select [(ngModel)]="fraisForm.payeur" name="payeur">
+                <option value="maison">Compte de la maison</option>
+                <option value="proprietaire">Un propriétaire (avance à rembourser)</option>
+              </select>
+            </div>
+            @if (fraisForm.payeur === 'proprietaire') {
+              <div class="form-group">
+                <label>Propriétaire payeur</label>
+                <select [(ngModel)]="fraisForm.proprietaire_payeur" name="proprietaire_payeur">
+                  @for (p of proprietaires(); track p.id) {
+                    <option [ngValue]="p.id">{{ p.nom }}</option>
+                  }
+                </select>
+              </div>
+            }
+          </div>
+        } @else {
+          <p class="hint">
+            Ce frais sera enregistré à votre nom comme avance payée sur votre
+            compte personnel — la maison vous remboursera une fois la facture vérifiée.
+          </p>
+        }
+
+        <div class="form-group">
+          <label>Facture (PDF, image…)</label>
+          <input type="file" (change)="onFraisFileChange($event)" accept="application/pdf,image/*" />
+          @if (editingFrais()?.facture) {
+            <small class="hint">Une facture est déjà jointe — n'en sélectionnez une que pour la remplacer.</small>
+          }
+        </div>
+        <div class="form-group">
+          <label>Date de paiement</label>
+          <input [(ngModel)]="fraisForm.date_paiement" name="date_paiement" type="date" />
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea [(ngModel)]="fraisForm.notes" name="notes"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" (click)="closeFraisModal()">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+}

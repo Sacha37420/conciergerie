@@ -150,3 +150,86 @@ class Reservation(models.Model):
 
     def __str__(self) -> str:
         return f'{self.appartement} — {self.date_debut} → {self.date_fin}'
+
+
+class Tache(models.Model):
+    """Une tâche à titre libre (ménage, travaux…), à l'échelle du bien ou
+    d'un appartement précis, rattachée à un propriétaire OU une entreprise
+    extérieure (jamais les deux). `duree_heures` sert au calcul proportionnel
+    des `Frais` et à l'investissement temporel du bilan économique."""
+
+    STATUT_CHOICES = [
+        ('a_faire', 'À faire'), ('en_cours', 'En cours'),
+        ('terminee', 'Terminée'), ('annulee', 'Annulée'),
+    ]
+
+    bien = models.ForeignKey(Bien, on_delete=models.CASCADE, related_name='taches')
+    # Null ⇒ tâche à l'échelle du bien entier ; sinon doit appartenir à `bien`
+    # (vérifié côté serializer, cf. TacheSerializer.validate).
+    appartement = models.ForeignKey(
+        Appartement, on_delete=models.CASCADE, related_name='taches', null=True, blank=True,
+    )
+    titre = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default='')
+    date_prevue = models.DateField(null=True, blank=True)
+    duree_heures = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    statut = models.CharField(max_length=10, choices=STATUT_CHOICES, default='a_faire')
+    proprietaire_responsable = models.ForeignKey(
+        Proprietaire, on_delete=models.SET_NULL, null=True, blank=True, related_name='taches',
+    )
+    entreprise_responsable = models.ForeignKey(
+        Entreprise, on_delete=models.SET_NULL, null=True, blank=True, related_name='taches',
+    )
+    created_by = models.EmailField(max_length=254, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'tache'
+        ordering = ['-date_prevue', '-created_at']
+
+    def __str__(self) -> str:
+        return self.titre
+
+
+class Frais(models.Model):
+    """Un coût rattaché à une tâche, avec sa propre facture. Une tâche peut
+    porter plusieurs `Frais`. Coût = fixe + (taux horaire × durée de la
+    tâche). Payé par le compte de la maison ou avancé par un propriétaire —
+    dans ce second cas, `facture` porte le justificatif de sa demande de
+    remboursement (voir Remboursement)."""
+
+    PAYEUR_CHOICES = [('maison', 'Maison'), ('proprietaire', 'Propriétaire')]
+
+    tache = models.ForeignKey(Tache, on_delete=models.CASCADE, related_name='frais')
+    libelle = models.CharField(max_length=200)
+    montant_fixe = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    taux_horaire = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    payeur = models.CharField(max_length=15, choices=PAYEUR_CHOICES, default='maison')
+    proprietaire_payeur = models.ForeignKey(
+        Proprietaire, on_delete=models.SET_NULL, null=True, blank=True, related_name='frais_avances',
+    )
+    facture = models.FileField(upload_to='factures/%Y/%m/', null=True, blank=True)
+    date_paiement = models.DateField(null=True, blank=True)
+    notes = models.TextField(blank=True, default='')
+    created_by = models.EmailField(max_length=254, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'frais'
+        ordering = ['-created_at']
+
+    @property
+    def montant_total(self):
+        duree = self.tache.duree_heures or 0
+        return self.montant_fixe + self.taux_horaire * duree
+
+    @property
+    def est_rembourse(self) -> bool:
+        # `remboursements` (related_name du M2M Remboursement.frais) n'existe
+        # que si payeur='proprietaire' a effectivement été remboursé.
+        manager = getattr(self, 'remboursements', None)
+        return manager.exists() if manager is not None else False
+
+    def __str__(self) -> str:
+        return f'{self.libelle} ({self.montant_total} €)'

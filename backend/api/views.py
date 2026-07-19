@@ -2,14 +2,19 @@ from io import StringIO
 
 from django.core.management import call_command
 from rest_framework import viewsets
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework.response import Response
 
-from .models import Proprietaire, Entreprise, Bien, PartProprietaire, Appartement, Reservation
+from .models import (
+    Proprietaire, Entreprise, Bien, PartProprietaire, Appartement, Reservation,
+    Tache, Frais,
+)
 from .serializers import (
     ProprietaireSerializer, EntrepriseSerializer, BienSerializer,
     PartProprietaireSerializer, AppartementSerializer, ReservationSerializer,
+    TacheSerializer, FraisSerializer,
 )
 from .permissions import IsManager, IsManagerOrOwner
 from .scoping import is_manager, proprietaire_for, biens_du_proprietaire, reservations_du_proprietaire
@@ -118,6 +123,94 @@ class ReservationViewSet(viewsets.ModelViewSet):
         if bien_id:
             qs = qs.filter(appartement__bien_id=bien_id)
         return qs
+
+
+class TacheViewSet(viewsets.ModelViewSet):
+    """Écriture (création/édition/suppression de tâches) réservée au
+    gestionnaire. Un propriétaire voit toutes les tâches de ses biens, quel
+    que soit le responsable (transparence de co-propriété)."""
+    serializer_class = TacheSerializer
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [IsAuthenticated(), IsManagerOrOwner()]
+        return [IsAuthenticated(), IsManager()]
+
+    def get_queryset(self):
+        qs = Tache.objects.select_related(
+            'bien', 'appartement', 'proprietaire_responsable', 'entreprise_responsable',
+        ).prefetch_related('frais')
+        if not is_manager(self.request):
+            qs = qs.filter(bien__in=biens_du_proprietaire(self.request.user))
+        bien_id = self.request.query_params.get('bien')
+        if bien_id:
+            qs = qs.filter(bien_id=bien_id)
+        appartement_id = self.request.query_params.get('appartement')
+        if appartement_id:
+            qs = qs.filter(appartement_id=appartement_id)
+        statut = self.request.query_params.get('statut')
+        if statut:
+            qs = qs.filter(statut=statut)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user.email)
+
+
+class FraisViewSet(viewsets.ModelViewSet):
+    """Le gestionnaire a tous les droits. Un propriétaire peut UNIQUEMENT
+    déclarer un frais qu'il a payé lui-même (`payeur=proprietaire`,
+    `proprietaire_payeur` = sa propre fiche), sur un bien qu'il possède,
+    avec la facture jointe — jamais un frais payé par la maison, ni pour un
+    autre propriétaire. Lecture : transparence totale sur ses biens."""
+    serializer_class = FraisSerializer
+
+    def get_permissions(self):
+        return [IsAuthenticated(), IsManagerOrOwner()]
+
+    def get_queryset(self):
+        qs = Frais.objects.select_related('tache__bien', 'proprietaire_payeur')
+        if not is_manager(self.request):
+            qs = qs.filter(tache__bien__in=biens_du_proprietaire(self.request.user))
+        tache_id = self.request.query_params.get('tache')
+        if tache_id:
+            qs = qs.filter(tache_id=tache_id)
+        return qs
+
+    def perform_create(self, serializer):
+        if is_manager(self.request):
+            serializer.save(created_by=self.request.user.email)
+            return
+
+        proprietaire = proprietaire_for(self.request.user)
+        tache = serializer.validated_data.get('tache')
+        if not proprietaire or tache is None or tache.bien not in biens_du_proprietaire(self.request.user):
+            raise PermissionDenied('Vous ne pouvez déclarer un frais que sur un bien que vous possédez.')
+        if (
+            serializer.validated_data.get('payeur') != 'proprietaire'
+            or serializer.validated_data.get('proprietaire_payeur') != proprietaire
+        ):
+            raise PermissionDenied('Vous ne pouvez déclarer que des frais que vous avez payés vous-même.')
+        serializer.save(created_by=self.request.user.email)
+
+    def perform_update(self, serializer):
+        instance = serializer.instance
+        if not is_manager(self.request):
+            proprietaire = proprietaire_for(self.request.user)
+            if instance.proprietaire_payeur_id != getattr(proprietaire, 'id', None) or instance.est_rembourse:
+                raise PermissionDenied(
+                    'Vous ne pouvez modifier que vos propres frais non encore remboursés.'
+                )
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if not is_manager(self.request):
+            proprietaire = proprietaire_for(self.request.user)
+            if instance.proprietaire_payeur_id != getattr(proprietaire, 'id', None) or instance.est_rembourse:
+                raise PermissionDenied(
+                    'Vous ne pouvez supprimer que vos propres frais non encore remboursés.'
+                )
+        instance.delete()
 
 
 class SyncAirbnbView(APIView):

@@ -84,6 +84,44 @@ export interface Reservation {
   updated_at?: string;
 }
 
+export interface Frais {
+  id?: number;
+  tache: number;
+  libelle: string;
+  montant_fixe: number | string;
+  taux_horaire: number | string;
+  payeur: 'maison' | 'proprietaire';
+  proprietaire_payeur?: number | null;
+  proprietaire_payeur_detail?: Proprietaire;
+  facture?: string | null;
+  date_paiement?: string | null;
+  notes?: string;
+  montant_total?: number | string;
+  est_rembourse?: boolean;
+  created_by?: string;
+  created_at?: string;
+}
+
+export interface Tache {
+  id?: number;
+  bien: number;
+  appartement?: number | null;
+  titre: string;
+  description?: string;
+  date_prevue?: string | null;
+  duree_heures?: number | string | null;
+  statut: 'a_faire' | 'en_cours' | 'terminee' | 'annulee';
+  proprietaire_responsable?: number | null;
+  entreprise_responsable?: number | null;
+  proprietaire_responsable_detail?: Proprietaire;
+  entreprise_responsable_detail?: Entreprise;
+  frais?: Frais[];
+  cout_total?: number | string;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private http = inject(HttpClient);
@@ -188,5 +226,45 @@ export class ApiService {
   }
   syncAirbnb(): Observable<{ log: string; erreurs: string }> {
     return this.http.post<{ log: string; erreurs: string }>(this.url('sync/airbnb/'), {});
+  }
+
+  // Tâches
+  getTaches(filters?: { bien?: number; appartement?: number; statut?: string }): Observable<Tache[]> {
+    const params = new URLSearchParams();
+    if (filters?.bien) params.set('bien', String(filters.bien));
+    if (filters?.appartement) params.set('appartement', String(filters.appartement));
+    if (filters?.statut) params.set('statut', filters.statut);
+    const qs = params.toString();
+    return this.http.get<Tache[]>(this.url(`taches/${qs ? '?' + qs : ''}`));
+  }
+  createTache(data: Partial<Tache>): Observable<Tache> {
+    return this.http.post<Tache>(this.url('taches/'), data);
+  }
+  updateTache(id: number, data: Partial<Tache>): Observable<Tache> {
+    return this.http.patch<Tache>(this.url(`taches/${id}/`), data);
+  }
+  deleteTache(id: number): Observable<void> {
+    return this.http.delete<void>(this.url(`taches/${id}/`));
+  }
+
+  // Frais (upload de facture en multipart si un fichier est fourni)
+  createFrais(data: Partial<Frais>, facture?: File | null): Observable<Frais> {
+    return this.http.post<Frais>(this.url('frais/'), this.toFraisBody(data, facture));
+  }
+  updateFrais(id: number, data: Partial<Frais>, facture?: File | null): Observable<Frais> {
+    return this.http.patch<Frais>(this.url(`frais/${id}/`), this.toFraisBody(data, facture));
+  }
+  deleteFrais(id: number): Observable<void> {
+    return this.http.delete<void>(this.url(`frais/${id}/`));
+  }
+
+  private toFraisBody(data: Partial<Frais>, facture?: File | null): FormData | Partial<Frais> {
+    if (!facture) return data;
+    const form = new FormData();
+    Object.entries(data).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) form.append(key, String(value));
+    });
+    form.append('facture', facture);
+    return form;
   }
 }
