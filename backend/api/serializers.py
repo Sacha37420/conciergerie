@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.urls import reverse
 from rest_framework import serializers
 from .models import (
     Proprietaire, Entreprise, Bien, PartProprietaire, Appartement, Reservation,
@@ -92,15 +93,30 @@ class ReservationSerializer(serializers.ModelSerializer):
 class FraisSerializer(serializers.ModelSerializer):
     montant_total = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     proprietaire_payeur_detail = ProprietaireSerializer(source='proprietaire_payeur', read_only=True)
+    # La facture n'est plus un FileField local (stockage délégué à l'app
+    # storage, cf. api/storage_client.py) : lecture = URL de l'action dédiée
+    # FraisViewSet.facture (le fichier lui-même n'est jamais exposé
+    # directement, storage applique son propre contrôle d'accès) ; écriture =
+    # champ multipart séparé, lu dans FraisViewSet.perform_create/update, pas
+    # persisté tel quel par ce serializer (facture_path est déduit après upload).
+    facture = serializers.SerializerMethodField()
+    facture_file = serializers.FileField(write_only=True, required=False, allow_null=True)
 
     class Meta:
         model = Frais
         fields = [
             'id', 'tache', 'libelle', 'montant_fixe', 'taux_horaire', 'payeur',
-            'proprietaire_payeur', 'proprietaire_payeur_detail', 'facture', 'date_paiement',
-            'notes', 'montant_total', 'created_by', 'created_at',
+            'proprietaire_payeur', 'proprietaire_payeur_detail', 'facture', 'facture_file',
+            'date_paiement', 'notes', 'montant_total', 'created_by', 'created_at',
         ]
         read_only_fields = ['created_by', 'created_at']
+
+    def get_facture(self, obj):
+        if not obj.facture_path:
+            return None
+        request = self.context.get('request')
+        url = reverse('frais-facture', args=[obj.pk])
+        return request.build_absolute_uri(url) if request else url
 
     def validate(self, attrs):
         payeur = attrs.get('payeur', getattr(self.instance, 'payeur', 'maison'))

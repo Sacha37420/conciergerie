@@ -97,7 +97,7 @@
                     </td>
                     <td>
                       @if (f.facture) {
-                        <a [href]="f.facture" target="_blank" rel="noopener">Voir</a>
+                        <button type="button" class="btn btn-secondary btn-sm" (click)="downloadFacture(f)">Voir</button>
                       } @else { — }
                     </td>
                     <td>

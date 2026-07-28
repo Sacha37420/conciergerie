@@ -39,7 +39,7 @@
                 <td>{{ f.libelle }}</td>
                 <td>{{ f.montant_total }} €</td>
                 <td>
-                  @if (f.facture) { <a [href]="f.facture" target="_blank" rel="noopener">Voir</a> } @else { — }
+                  @if (f.facture) { <button type="button" class="btn btn-secondary btn-sm" (click)="downloadFacture(f)">Voir</button> } @else { — }
                 </td>
               </tr>
             }

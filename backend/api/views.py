@@ -1,13 +1,17 @@
 from io import StringIO
+from uuid import uuid4
 
 from django.core.management import call_command
+from django.http import StreamingHttpResponse
+from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework.response import Response
 
+from . import storage_client
 from .models import (
     Proprietaire, Entreprise, Bien, PartProprietaire, Appartement, Reservation,
     Tache, Frais, Remboursement, ApportInitial, VersementRevenu,
@@ -21,6 +25,15 @@ from .serializers import (
 from .permissions import IsManager, IsManagerOrOwner
 from .scoping import is_manager, proprietaire_for, biens_du_proprietaire, reservations_du_proprietaire
 from . import bilan as bilan_module
+
+
+def _upload_facture(bien_id: int, file_obj) -> str:
+    """Dépose `file_obj` dans le partage storage du bien, retourne le
+    relative_path à conserver dans Frais.facture_path."""
+    now = timezone.now()
+    relative_path = f'factures/{now:%Y/%m}/{uuid4().hex}-{file_obj.name}'
+    result = storage_client.upload(bien_id, relative_path, file_obj, file_obj.name, file_obj.content_type)
+    return result['relative_path']
 
 
 class MeView(APIView):
@@ -197,20 +210,21 @@ class FraisViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        if is_manager(self.request):
-            serializer.save(created_by=self.request.user.email)
-            return
-
-        proprietaire = proprietaire_for(self.request.user)
+        facture_file = serializer.validated_data.pop('facture_file', None)
         tache = serializer.validated_data.get('tache')
-        if not proprietaire or tache is None or tache.bien not in biens_du_proprietaire(self.request.user):
-            raise PermissionDenied('Vous ne pouvez déclarer un frais que sur un bien que vous possédez.')
-        if (
-            serializer.validated_data.get('payeur') != 'proprietaire'
-            or serializer.validated_data.get('proprietaire_payeur') != proprietaire
-        ):
-            raise PermissionDenied('Vous ne pouvez déclarer que des frais que vous avez payés vous-même.')
-        serializer.save(created_by=self.request.user.email)
+
+        if not is_manager(self.request):
+            proprietaire = proprietaire_for(self.request.user)
+            if not proprietaire or tache is None or tache.bien not in biens_du_proprietaire(self.request.user):
+                raise PermissionDenied('Vous ne pouvez déclarer un frais que sur un bien que vous possédez.')
+            if (
+                serializer.validated_data.get('payeur') != 'proprietaire'
+                or serializer.validated_data.get('proprietaire_payeur') != proprietaire
+            ):
+                raise PermissionDenied('Vous ne pouvez déclarer que des frais que vous avez payés vous-même.')
+
+        facture_path = _upload_facture(tache.bien_id, facture_file) if facture_file else None
+        serializer.save(created_by=self.request.user.email, facture_path=facture_path)
 
     def perform_update(self, serializer):
         instance = serializer.instance
@@ -220,7 +234,17 @@ class FraisViewSet(viewsets.ModelViewSet):
                 raise PermissionDenied(
                     'Vous ne pouvez modifier que vos propres frais non encore remboursés.'
                 )
-        serializer.save()
+
+        facture_file = serializer.validated_data.pop('facture_file', None)
+        if not facture_file:
+            serializer.save()
+            return
+
+        old_path = instance.facture_path
+        new_path = _upload_facture(instance.tache.bien_id, facture_file)
+        serializer.save(facture_path=new_path)
+        if old_path:
+            storage_client.delete(instance.tache.bien_id, old_path)
 
     def perform_destroy(self, instance):
         if not is_manager(self.request):
@@ -229,7 +253,26 @@ class FraisViewSet(viewsets.ModelViewSet):
                 raise PermissionDenied(
                     'Vous ne pouvez supprimer que vos propres frais non encore remboursés.'
                 )
+        if instance.facture_path:
+            storage_client.delete(instance.tache.bien_id, instance.facture_path)
         instance.delete()
+
+    @action(detail=True, methods=['get'])
+    def facture(self, request, pk=None):
+        """GET /api/frais/<id>/facture/ — proxie le téléchargement depuis
+        storage. self.get_object() réapplique get_queryset() : même
+        cloisonnement manager/co-propriétaire que le reste du ViewSet."""
+        frais = self.get_object()
+        if not frais.facture_path:
+            raise NotFound('Aucune facture pour ce frais.')
+        upstream = storage_client.download(frais.tache.bien_id, frais.facture_path)
+        filename = frais.facture_path.rsplit('/', 1)[-1]
+        response = StreamingHttpResponse(
+            upstream.iter_content(chunk_size=8192),
+            content_type=upstream.headers.get('Content-Type', 'application/octet-stream'),
+        )
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        return response
 
 
 class RemboursementViewSet(viewsets.ModelViewSet):

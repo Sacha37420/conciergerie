@@ -111,4 +111,18 @@ export class RemboursementsComponent implements OnInit {
   }
 
   close(): void { this.showModal.set(false); }
+
+  /** La facture est servie par une API authentifiée (storage, via le backend
+   * conciergerie) : un <a href> nu n'y aurait plus accès (401 sans token). */
+  downloadFacture(f: Frais): void {
+    this.api.downloadFacture(f.id!).subscribe(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  }
 }

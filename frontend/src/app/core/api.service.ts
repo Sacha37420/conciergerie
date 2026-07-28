@@ -322,13 +322,20 @@ export class ApiService {
     return this.http.delete<void>(this.url(`frais/${id}/`));
   }
 
+  /** Facture stockée par l'app storage — le lien direct (facture?: string) ne
+   * porte pas de token, il faut donc récupérer le blob en XHR authentifié
+   * (auth.interceptor.ts) puis déclencher le téléchargement côté client. */
+  downloadFacture(id: number): Observable<Blob> {
+    return this.http.get(this.url(`frais/${id}/facture/`), { responseType: 'blob' });
+  }
+
   private toFraisBody(data: Partial<Frais>, facture?: File | null): FormData | Partial<Frais> {
     if (!facture) return data;
     const form = new FormData();
     Object.entries(data).forEach(([key, value]) => {
       if (value !== undefined && value !== null) form.append(key, String(value));
     });
-    form.append('facture', facture);
+    form.append('facture_file', facture);
     return form;
   }
 

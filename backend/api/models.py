@@ -230,7 +230,10 @@ class Frais(models.Model):
     proprietaire_payeur = models.ForeignKey(
         Proprietaire, on_delete=models.SET_NULL, null=True, blank=True, related_name='frais_avances',
     )
-    facture = models.FileField(upload_to='factures/%Y/%m/', null=True, blank=True)
+    # Chemin relatif du fichier dans le partage storage du bien
+    # (conciergerie-bien-<id>) — le fichier lui-même n'est plus stocké
+    # localement, cf. api/storage_client.py et FraisViewSet.
+    facture_path = models.CharField(max_length=1024, null=True, blank=True)
     date_paiement = models.DateField(null=True, blank=True)
     notes = models.TextField(blank=True, default='')
     created_by = models.EmailField(max_length=254, blank=True, default='')

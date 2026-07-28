@@ -61,16 +61,25 @@ DB_SCHEMA = _DB_SCHEMA
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 USE_TZ = True
 
-# ── Médias (factures uploadées sur les Frais) ───────────────────────────────────
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-_script = FORCE_SCRIPT_NAME.rstrip('/')
-# Préfixe le chemin public par SCRIPT_NAME pour rester correct derrière Caddy.
-MEDIA_URL = f'{_script}/media/' if _script else '/media/'
-
 # ── Limites d'upload ─────────────────────────────────────────────────────────────
 MAX_UPLOAD_BYTES = config('MAX_UPLOAD_BYTES', default=15728640, cast=int)  # 15 Mo
 DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_BYTES
 FILE_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_BYTES
+
+# ── Factures (Frais.facture_path) — stockage délégué à l'app storage ────────────
+# Les factures ne sont plus servies localement (ancien MEDIA_ROOT/MEDIA_URL,
+# retiré — voir CLAUDE.md racine, section stockage de fichiers partagé du lab).
+# Un partage storage par bien (STORAGE_NAMESPACE_PREFIX + bien_id), créé
+# automatiquement au premier upload — cf. api/storage_client.py.
+STORAGE_INTERNAL_URL = config('STORAGE_INTERNAL_URL', default='http://storage-backend:8000')
+STORAGE_NAMESPACE_PREFIX = config('STORAGE_NAMESPACE_PREFIX', default='conciergerie-bien-')
+# Compte de service (client_credentials) — client compagnon confidentiel
+# 'conciergerie-admin', créé par create-app-client.sh (déclenché par la
+# présence de conciergerie/.keycloak-service-account-roles, même mécanisme que
+# lab-admin/restauration). Autorisé côté storage via
+# KEYCLOAK_SERVICE_WRITE_PREFIXES=conciergerie-admin:conciergerie-bien-
+KEYCLOAK_ADMIN_CLIENT_ID = config('KEYCLOAK_ADMIN_CLIENT_ID', default='conciergerie-admin')
+KEYCLOAK_ADMIN_CLIENT_SECRET = config('KEYCLOAK_ADMIN_CLIENT_SECRET', default='')
 
 # ── Valorisation du temps propriétaire (bilan économique, api/bilan.py) ──────────
 # Coût horaire retenu pour valoriser le temps qu'un propriétaire déclare sur
