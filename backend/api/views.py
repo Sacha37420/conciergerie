@@ -2,6 +2,7 @@ from io import StringIO
 from uuid import uuid4
 
 from django.core.management import call_command
+from django.db import transaction
 from django.http import StreamingHttpResponse
 from django.utils import timezone
 from rest_framework import viewsets
@@ -56,6 +57,17 @@ class ProprietaireViewSet(viewsets.ModelViewSet):
     queryset = Proprietaire.objects.all()
     serializer_class = ProprietaireSerializer
     permission_classes = [IsAuthenticated, IsManager]
+
+    def perform_update(self, serializer):
+        # Un changement d'email déclenche la resynchronisation des
+        # ShareMember storage de ce propriétaire (api/signals.py,
+        # _resync_on_email_change) : contrairement à une suppression, une
+        # simple sauvegarde n'est pas encapsulée dans une transaction par
+        # Django — l'atomic() explicite ici garantit qu'un échec storage fait
+        # échouer (et annule) la mise à jour plutôt que de laisser le nouvel
+        # email en base sans accès storage correspondant.
+        with transaction.atomic():
+            serializer.save()
 
 
 class EntrepriseViewSet(viewsets.ModelViewSet):
@@ -113,6 +125,20 @@ class PartProprietaireViewSet(viewsets.ModelViewSet):
         if bien_id:
             qs = qs.filter(bien_id=bien_id)
         return qs
+
+    # Création/modification d'une part déclenche l'ajout/déplacement d'un
+    # ShareMember storage réel (api/signals.py) : une simple sauvegarde
+    # Django n'est pas encapsulée dans une transaction (contrairement à une
+    # suppression, cf. commentaire de signals.py) — l'atomic() explicite ici
+    # garantit qu'un échec storage annule la part plutôt que de la laisser
+    # en base sans accès storage correspondant.
+    def perform_create(self, serializer):
+        with transaction.atomic():
+            serializer.save()
+
+    def perform_update(self, serializer):
+        with transaction.atomic():
+            serializer.save()
 
 
 class AppartementViewSet(viewsets.ModelViewSet):

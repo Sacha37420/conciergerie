@@ -1,5 +1,7 @@
 from decimal import Decimal
+from urllib.parse import quote
 
+from django.conf import settings
 from django.urls import reverse
 from rest_framework import serializers
 from .models import (
@@ -7,6 +9,7 @@ from .models import (
     Tache, Frais, Remboursement, ApportInitial, VersementRevenu,
 )
 from . import bilan as bilan_module
+from .scoping import is_manager
 
 
 class ProprietaireSerializer(serializers.ModelSerializer):
@@ -94,11 +97,10 @@ class FraisSerializer(serializers.ModelSerializer):
     montant_total = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     proprietaire_payeur_detail = ProprietaireSerializer(source='proprietaire_payeur', read_only=True)
     # La facture n'est plus un FileField local (stockage délégué à l'app
-    # storage, cf. api/storage_client.py) : lecture = URL de l'action dédiée
-    # FraisViewSet.facture (le fichier lui-même n'est jamais exposé
-    # directement, storage applique son propre contrôle d'accès) ; écriture =
-    # champ multipart séparé, lu dans FraisViewSet.perform_create/update, pas
-    # persisté tel quel par ce serializer (facture_path est déduit après upload).
+    # storage, cf. api/storage_client.py) : écriture = champ multipart séparé,
+    # lu dans FraisViewSet.perform_create/update, pas persisté tel quel par ce
+    # serializer (facture_path est déduit après upload). Lecture : voir
+    # get_facture ci-dessous, deux chemins possibles.
     facture = serializers.SerializerMethodField()
     facture_file = serializers.FileField(write_only=True, required=False, allow_null=True)
 
@@ -112,9 +114,35 @@ class FraisSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_by', 'created_at']
 
     def get_facture(self, obj):
+        """URL de lecture de la facture — deux chemins distincts, tous deux
+        déjà correctement cloisonnés :
+
+        - Co-propriétaire (le cas courant du portail) : URL storage
+          **directe** (même origine, cf. dev/CLAUDE.md « Verrou 2
+          généralisé »). Sûr uniquement parce que chaque PartProprietaire a
+          désormais un vrai ShareMember correspondant sur le partage du bien
+          (cf. api/signals.py) — c'est storage qui devient le seul rempart
+          sur ce chemin, avec le propre token de l'utilisateur.
+        - Gestionnaire : reste proxié par FraisViewSet.facture. Un
+          gestionnaire voit TOUS les biens (pas de filtre biens_du_proprietaire,
+          cf. FraisViewSet.get_queryset), sans notion de co-propriété — le
+          traduire en ShareMember individuels par gestionnaire supposerait de
+          connaître la liste des comptes du groupe Keycloak `admins`, que ce
+          backend n'a aujourd'hui aucun moyen d'interroger (pas d'accès à
+          l'API Admin Keycloak, cf. .keycloak-service-account-roles vide).
+          Plutôt que de deviner un mécanisme de synchronisation supplémentaire
+          (risque de dérive du type documenté pour e2e_member), on garde le
+          proxy pour ce rôle : IsManagerOrOwner/is_manager revérifie déjà
+          correctement l'accès à chaque requête, sans rien à synchroniser.
+        """
         if not obj.facture_path:
             return None
         request = self.context.get('request')
+        if request is not None and not is_manager(request):
+            namespace = f'{settings.STORAGE_NAMESPACE_PREFIX}{obj.tache.bien_id}'
+            quoted_path = quote(obj.facture_path, safe='/')
+            location = f'/storage-api/api/files/{namespace}/content/{quoted_path}'
+            return request.build_absolute_uri(location)
         url = reverse('frais-facture', args=[obj.pk])
         return request.build_absolute_uri(url) if request else url
 

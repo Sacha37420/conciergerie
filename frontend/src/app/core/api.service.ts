@@ -322,11 +322,16 @@ export class ApiService {
     return this.http.delete<void>(this.url(`frais/${id}/`));
   }
 
-  /** Facture stockée par l'app storage — le lien direct (facture?: string) ne
-   * porte pas de token, il faut donc récupérer le blob en XHR authentifié
-   * (auth.interceptor.ts) puis déclencher le téléchargement côté client. */
-  downloadFacture(id: number): Observable<Blob> {
-    return this.http.get(this.url(`frais/${id}/facture/`), { responseType: 'blob' });
+  /** Facture stockée par l'app storage. `f.facture` porte déjà l'URL de
+   * lecture correcte pour l'appelant (backend/api/serializers.py,
+   * FraisSerializer.get_facture) : accès storage direct pour un
+   * co-propriétaire (ShareMember réel, cf. backend/api/signals.py), proxy
+   * backend pour un gestionnaire — les deux sont même origine (Caddy), donc
+   * le token posé par auth.interceptor.ts s'applique dans les deux cas. Le
+   * lien nu ne porte pas de token, il faut donc récupérer le blob en XHR
+   * authentifié puis déclencher le téléchargement côté client. */
+  downloadFacture(f: Frais): Observable<Blob> {
+    return this.http.get(f.facture!, { responseType: 'blob' });
   }
 
   private toFraisBody(data: Partial<Frais>, facture?: File | null): FormData | Partial<Frais> {

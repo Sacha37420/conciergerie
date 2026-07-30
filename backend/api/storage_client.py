@@ -1,4 +1,4 @@
-"""Client minimal de l'API fichiers de l'app storage.
+"""Client minimal de l'API fichiers + partages de l'app storage.
 
 Le backend agit via le **service account** du client confidentiel compagnon
 ``conciergerie-admin`` (flux ``client_credentials``) — même mécanique de
@@ -6,11 +6,19 @@ token que ``lab-admin``/``restauration`` pour l'API Admin Keycloak (porté de
 ``lab-admin/backend/api/keycloak_admin.py``), mais appelée contre l'API
 ``storage`` au lieu de l'API Admin Keycloak.
 
-L'autorisation fine (qui peut lire/écrire quelle facture) est décidée par
-``FraisViewSet`` *avant* d'appeler ce module : storage fait confiance au
-compte de service sur tout partage préfixé ``conciergerie-bien-`` (cf.
-``KEYCLOAK_SERVICE_WRITE_PREFIXES`` côté storage), sans notion de
-co-propriétaire — ce module reste un simple transport.
+Deux familles de fonctions :
+
+- ``upload``/``download``/``delete`` : contenu des factures. L'autorisation
+  fine (qui peut lire/écrire quelle facture) reste décidée par
+  ``FraisViewSet`` *avant* d'appeler ce module : storage fait confiance au
+  compte de service sur tout partage préfixé ``conciergerie-bien-`` (cf.
+  ``KEYCLOAK_SERVICE_WRITE_PREFIXES`` côté storage) — ce module reste un
+  simple transport pour ce chemin, resté proxié par le backend.
+- ``add_member``/``remove_member`` (+ ``ensure_share``) : synchronisent les
+  vrais ``ShareMember`` du partage du bien avec ``PartProprietaire`` (cf.
+  ``api/signals.py``) — c'est ce qui rend possible un accès **direct**
+  frontend → storage en lecture pour un co-propriétaire (``FraisSerializer.
+  get_facture``), storage devenant alors le seul rempart pour ce chemin.
 """
 from __future__ import annotations
 
@@ -120,3 +128,52 @@ def delete(bien_id: int, relative_path: str) -> None:
         raise StorageClientError(f'storage injoignable : {exc}') from exc
     if resp.status_code not in (204, 404):
         raise StorageClientError(f'Suppression storage échouée (HTTP {resp.status_code}).')
+
+
+def ensure_share(bien_id: int) -> None:
+    """Force la création du partage storage du bien s'il n'existe pas encore.
+
+    ``resolve_namespace`` (storage) crée le ``Share`` au premier appel du
+    compte de service sur un namespace préfixé ``conciergerie-bien-`` — y
+    compris pour un simple ``GET`` de liste, pas seulement un upload (cf.
+    ``FileListUploadView.get`` côté storage). Nécessaire avant un premier
+    ``add_member``/``remove_member`` sur un bien qui n'a encore aucune facture
+    (sinon ``ShareMembersView`` répond 404, le partage n'existant pas)."""
+    url = f"{settings.STORAGE_INTERNAL_URL}/api/files/{_namespace(bien_id)}/"
+    try:
+        resp = requests.get(url, headers=_headers(), timeout=_TIMEOUT)
+    except requests.RequestException as exc:
+        raise StorageClientError(f'storage injoignable : {exc}') from exc
+    if resp.status_code != 200:
+        raise StorageClientError(f'Création du partage storage échouée (HTTP {resp.status_code}).')
+
+
+def add_member(bien_id: int, email: str, role: str = 'read') -> None:
+    """Ajoute (ou met à jour le rôle de) ``email`` comme ``ShareMember`` du
+    partage du bien. Le partage a été créé par ce même compte de service
+    (``KEYCLOAK_SERVICE_WRITE_PREFIXES``), qui en est donc ``owner_username``
+    au sens de storage — ``get_owned_share`` l'autorise à gérer les membres."""
+    ensure_share(bien_id)
+    url = f"{settings.STORAGE_INTERNAL_URL}/api/shares/{_namespace(bien_id)}/members/"
+    try:
+        resp = requests.post(
+            url, headers=_headers(), data={'member_email': email, 'role': role}, timeout=_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        raise StorageClientError(f'storage injoignable : {exc}') from exc
+    if resp.status_code != 201:
+        raise StorageClientError(
+            f"Ajout du membre '{email}' échoué (HTTP {resp.status_code}) : {resp.text[:200]}"
+        )
+
+
+def remove_member(bien_id: int, email: str) -> None:
+    """Retire ``email`` des membres du partage du bien. Idempotent (404 =
+    déjà absent, traité comme un succès — même convention que ``delete()``)."""
+    url = f"{settings.STORAGE_INTERNAL_URL}/api/shares/{_namespace(bien_id)}/members/{email}/"
+    try:
+        resp = requests.delete(url, headers=_headers(), timeout=_TIMEOUT)
+    except requests.RequestException as exc:
+        raise StorageClientError(f'storage injoignable : {exc}') from exc
+    if resp.status_code not in (204, 404):
+        raise StorageClientError(f"Retrait du membre '{email}' échoué (HTTP {resp.status_code}).")
