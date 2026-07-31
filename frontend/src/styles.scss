@@ -217,6 +217,7 @@ code, pre, .mono { font-family: var(--font-mono); }
     transition: border-color 0.15s;
 
     &:focus { outline: none; border-color: var(--accent); }
+    &:focus-visible { box-shadow: 0 0 0 3px var(--accent-tint); }
   }
 
   textarea { min-height: 80px; resize: vertical; }
