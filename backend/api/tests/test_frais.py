@@ -1,7 +1,6 @@
 """Frais : ce qu'un co-propriétaire peut déclarer, et le trajet des factures
 vers `storage` (compte de service — tout appel est simulé)."""
 import datetime
-import unittest
 from unittest import mock
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -104,36 +103,45 @@ class DeclarationParUnProprietaireTests(FraisBase):
         # Le gestionnaire, lui, garde la main.
         self.assertEqual(self.gina.patch(url, {'montant_fixe': '11'}, format='json').status_code, 200)
 
-    # DÉFAUT (rapport chantier « tests ») — FraisViewSet.perform_update ne
-    # contrôle que l'état AVANT modification (c'est mon frais, non remboursé),
-    # jamais les valeurs demandées. perform_create interdit pourtant les mêmes
-    # choses à la création. Un co-propriétaire peut donc, par PATCH sur un de
-    # ses frais : le mettre au nom d'un autre propriétaire, le déplacer sur la
-    # tâche d'un bien qu'il ne possède pas (il fausse le bilan d'autrui), ou le
-    # convertir en frais « maison » daté, qui entre aussitôt dans le grand
-    # livre comme dépense collective sans passer par le gestionnaire.
-    # Correctif : rejouer dans perform_update les contrôles de perform_create
-    # sur l'état résultant.
+    # perform_update applique aux valeurs DEMANDÉES les règles de la création :
+    # un co-propriétaire ne change ni l'auteur, ni le bien, ni la nature de
+    # son frais. (Avant correctif, ces trois PATCH passaient.)
 
-    @unittest.expectedFailure
+    def _refuse_et_inchange(self, corps):
+        frais = self.avance(self.p_alice)
+        for methode, donnees in ((self.alice.patch, corps), (self.alice.put, {**self.corps(), **corps})):
+            resp = methode(f'/api/frais/{frais.pk}/', donnees, format='json')
+            self.assertEqual(resp.status_code, 403, resp.content)
+        frais.refresh_from_db()
+        self.assertEqual((frais.payeur, frais.proprietaire_payeur, frais.tache, frais.montant_fixe,
+                          frais.date_paiement), ('proprietaire', self.p_alice, self.tache_maison, 10, None))
+        # Le gestionnaire garde ses droits sur le même changement.
+        self.assertEqual(self.gina.patch(f'/api/frais/{frais.pk}/', corps, format='json').status_code, 200)
+
     def test_modification_ne_met_pas_le_frais_au_nom_d_un_autre(self):
-        frais = self.avance(self.p_alice)
-        resp = self.alice.patch(f'/api/frais/{frais.pk}/', {'proprietaire_payeur': self.p_bob.pk}, format='json')
-        self.assertEqual(resp.status_code, 403)
+        self._refuse_et_inchange({'proprietaire_payeur': self.p_bob.pk})
 
-    @unittest.expectedFailure
     def test_modification_ne_deplace_pas_le_frais_sur_le_bien_d_autrui(self):
-        frais = self.avance(self.p_alice)
-        resp = self.alice.patch(f'/api/frais/{frais.pk}/', {'tache': self.tache_chalet.pk}, format='json')
-        self.assertEqual(resp.status_code, 403)
+        self._refuse_et_inchange({'tache': self.tache_chalet.pk})
 
-    @unittest.expectedFailure
+    def test_modification_ne_deplace_pas_le_frais_meme_vers_un_autre_de_ses_biens(self):
+        # La facture vit dans le partage storage du bien d'origine.
+        from api.models import PartProprietaire
+        PartProprietaire.objects.create(bien=self.chalet, proprietaire=self.p_alice)
+        self._refuse_et_inchange({'tache': self.tache_chalet.pk})
+
     def test_modification_ne_convertit_pas_en_frais_de_la_maison(self):
+        self._refuse_et_inchange({'payeur': 'maison', 'proprietaire_payeur': None, 'montant_fixe': '5000',
+                                  'date_paiement': '2026-05-01'})
+
+    def test_modification_permise_montant_libelle_date_et_autre_tache_du_meme_bien(self):
         frais = self.avance(self.p_alice)
-        resp = self.alice.patch(f'/api/frais/{frais.pk}/', {
-            'payeur': 'maison', 'proprietaire_payeur': None, 'montant_fixe': '5000',
-            'date_paiement': '2026-05-01'}, format='json')
-        self.assertEqual(resp.status_code, 403)
+        autre = Tache.objects.create(bien=self.maison, titre='Autre tâche de la maison')
+        resp = self.alice.put(f'/api/frais/{frais.pk}/', self.corps(
+            tache=autre.pk, libelle='Corrigé', montant_fixe='18.00', date_paiement='2026-05-02'), format='json')
+        self.assertEqual(resp.status_code, 200, resp.content)
+        frais.refresh_from_db()
+        self.assertEqual((frais.tache, frais.libelle, frais.montant_fixe), (autre, 'Corrigé', 18))
 
 
 class FacturesTests(FraisBase):

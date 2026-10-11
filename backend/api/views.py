@@ -260,6 +260,19 @@ class FraisViewSet(viewsets.ModelViewSet):
                 raise PermissionDenied(
                     'Vous ne pouvez modifier que vos propres frais non encore remboursés.'
                 )
+            # Mêmes règles qu'à la création (perform_create), appliquées aux
+            # valeurs DEMANDÉES : sans cela un PATCH mettait le frais au nom
+            # d'un autre, le déplaçait sur le bien d'autrui, ou le convertissait
+            # en frais « maison » daté, entré aussitôt dans le grand livre.
+            data = serializer.validated_data
+            tache = data.get('tache', instance.tache)
+            if tache.bien_id != instance.tache.bien_id:
+                raise PermissionDenied('Vous ne pouvez pas déplacer un frais vers un autre bien.')
+            if (
+                data.get('payeur', instance.payeur) != 'proprietaire'
+                or data.get('proprietaire_payeur', instance.proprietaire_payeur) != proprietaire
+            ):
+                raise PermissionDenied('Vous ne pouvez déclarer que des frais que vous avez payés vous-même.')
 
         facture_file = serializer.validated_data.pop('facture_file', None)
         if not facture_file:
