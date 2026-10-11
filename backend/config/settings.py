@@ -60,6 +60,11 @@ DATABASES = {
 DB_SCHEMA = _DB_SCHEMA
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 USE_TZ = True
+# Fuseau du lab. Sans lui Django retombe sur « America/Chicago » : la synchro
+# iCal prenait pour « aujourd'hui » la veille entre minuit et 7 h, et annulait
+# à tort un séjour terminé la veille (sync_airbnb_calendars). Les instants
+# restent stockés en UTC (USE_TZ) ; seules les dates locales en dépendent.
+TIME_ZONE = 'Europe/Paris'
 
 # ── Limites d'upload ─────────────────────────────────────────────────────────────
 MAX_UPLOAD_BYTES = config('MAX_UPLOAD_BYTES', default=15728640, cast=int)  # 15 Mo

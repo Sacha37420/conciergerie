@@ -1,6 +1,5 @@
 """Synchronisation des calendriers iCal Airbnb — le flux est simulé."""
 import datetime
-import unittest
 from decimal import Decimal
 from io import StringIO
 from unittest import mock
@@ -200,23 +199,36 @@ class SyncAirbnbTests(SyncBase):
         self.appt_maison.refresh_from_db()
         self.assertEqual((self.appt_maison.nom, self.appt_maison.dernier_sync_erreur), ('RDC bis', ''))
 
-    @unittest.expectedFailure
     def test_un_sejour_termine_la_veille_n_est_pas_annule(self):
-        # DÉFAUT (rapport chantier « tests ») : config/settings.py ne fixe pas
-        # TIME_ZONE ; Django retombe sur « America/Chicago ». La commande
-        # prend `timezone.localdate()` pour « aujourd'hui » : entre minuit et
-        # 7 h (heure de Paris), c'est encore la veille. Un séjour terminé la
-        # veille et déjà sorti du flux est alors pris pour un séjour à venir
-        # disparu, donc marqué « annulé » — et son revenu sort du bilan
-        # (seuls les séjours confirmés comptent). Même cause : un VEVENT daté
-        # en heure UTC est converti en date de Chicago. Correctif :
-        # TIME_ZONE = 'Europe/Paris'.
+        # « Aujourd'hui » est la date de Paris (TIME_ZONE). Avec le fuseau par
+        # défaut de Django (Chicago), entre minuit et 7 h c'était encore la
+        # veille : un séjour terminé la veille et déjà sorti du flux était pris
+        # pour un séjour à venir disparu, marqué annulé, et son revenu sortait
+        # du bilan.
         Reservation.objects.create(appartement=self.appt_maison, source='airbnb', uid_externe='hier',
                                    date_debut=datetime.date(2026, 6, 27), date_fin=datetime.date(2026, 7, 1),
                                    montant_revenu=Decimal('600'), date_paiement=datetime.date(2026, 6, 28))
         self.flux[URL_MAISON] = ics()
-        # 2 juillet, 3 h à Paris (1 h UTC) — le 1er juillet, 20 h à Chicago.
+        # 2 juillet, 3 h à Paris (1 h UTC).
         instant = datetime.datetime(2026, 7, 2, 1, 0, tzinfo=datetime.timezone.utc)
         with mock.patch('django.utils.timezone.now', return_value=instant):
             self.synchroniser()
         self.assertEqual(self.statuts(), {'hier': 'confirmee'})
+
+    def test_un_evenement_date_en_heure_utc_prend_la_date_de_paris(self):
+        self.flux[URL_MAISON] = ics(['UID:nuit', f'DTSTART:{FUTUR}0701T223000Z', f'DTEND:{FUTUR}0705T080000Z'])
+        self.synchroniser()
+        r = Reservation.objects.get(uid_externe='nuit')
+        # 22 h 30 UTC le 1er = 0 h 30 le 2 à Paris ; 8 h UTC le 5 = 10 h le 5.
+        self.assertEqual((r.date_debut, r.date_fin), (datetime.date(FUTUR, 7, 2), datetime.date(FUTUR, 7, 5)))
+
+    def test_le_dossier_d_une_facture_ne_depend_pas_du_fuseau(self):
+        # Seul autre usage d'une date dans l'app : le dossier AAAA/MM d'une
+        # facture, pris sur l'instant UTC.
+        from api import views
+        instant = datetime.datetime(2026, 12, 31, 23, 30, tzinfo=datetime.timezone.utc)
+        fichier = mock.Mock(content_type='application/pdf')
+        fichier.name = 'f.pdf'
+        with mock.patch('django.utils.timezone.now', return_value=instant):
+            chemin = views._upload_facture(self.maison.pk, fichier)
+        self.assertTrue(chemin.startswith('factures/2026/12/'), chemin)
