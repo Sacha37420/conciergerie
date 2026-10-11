@@ -90,7 +90,7 @@ class CloisonnementTests(Base):
             with self.subTest(chemin=chemin):
                 self.assertEqual(self.alice.get(chemin).status_code, 404)
         self.assertEqual(self.alice.get(f'/api/biens/{self.maison.pk}/').status_code, 200)
-        self.assertIn(self.alice.get(f'/api/biens/{self.chalet.pk}/bilan/').status_code, (403, 404))
+        self.assertEqual(self.alice.get(f'/api/biens/{self.chalet.pk}/bilan/').status_code, 404)
 
     def test_versements_et_remboursements_strictement_personnels(self):
         # Même entre co-propriétaires du même bien.
@@ -123,6 +123,7 @@ class CloisonnementTests(Base):
         PartProprietaire.objects.filter(bien=self.maison, proprietaire=self.p_alice).delete()
         self.assertEqual(self.ids(self.alice, '/api/biens/'), [])
         self.assertEqual(self.alice.get(f'/api/biens/{self.maison.pk}/').status_code, 404)
+        self.assertEqual(self.alice.get(f'/api/biens/{self.maison.pk}/bilan/').status_code, 404)
 
     def test_annuaires_reserves_au_gestionnaire(self):
         Entreprise.objects.create(nom='Plombier')
@@ -190,17 +191,12 @@ class CloisonnementTests(Base):
 
     def test_bilan_ferme_a_qui_n_a_pas_de_part(self):
         for client in (self.chloe, self.client_de('dan')):
-            self.assertIn(client.get(f'/api/biens/{self.maison.pk}/bilan/').status_code, (403, 404))
+            self.assertEqual(client.get(f'/api/biens/{self.maison.pk}/bilan/').status_code, 404)
+        # Le bilan reste une lecture : aucune écriture par cette route.
+        self.assertIn(self.alice.post(f'/api/biens/{self.maison.pk}/bilan/', {}).status_code, (403, 405))
 
-    @unittest.expectedFailure
     def test_bilan_un_proprietaire_ne_recoit_que_sa_ligne(self):
-        # DÉFAUT (rapport chantier « tests ») : BienViewSet.get_permissions
-        # n'ouvre aux propriétaires que `list` et `retrieve` ; l'action
-        # `bilan` tombe dans la branche IsManager. Un co-propriétaire reçoit
-        # donc 403 sur le bilan de SON bien, alors que la vue est écrite pour
-        # lui (docstring, filtrage de sa seule ligne juste en dessous — code
-        # mort). Échec fermé : rien ne fuit, mais la fonction est cassée.
-        # Correctif : ajouter 'bilan' aux actions ouvertes par IsManagerOrOwner.
+        # Le co-propriétaire lit le bilan de SON bien, réduit à sa ligne.
         url = f'/api/biens/{self.maison.pk}/bilan/'
         donnees = self.alice.get(url).json()
         self.assertEqual([l['proprietaire_id'] for l in donnees['proprietaires']], [self.p_alice.pk])

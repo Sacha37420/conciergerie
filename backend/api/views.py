@@ -80,7 +80,9 @@ class BienViewSet(viewsets.ModelViewSet):
     serializer_class = BienSerializer
 
     def get_permissions(self):
-        if self.action in ('list', 'retrieve'):
+        # 'bilan' : lecture, ouverte au co-propriétaire comme le bien lui-même
+        # (get_queryset le limite à SES biens, la vue à sa seule ligne).
+        if self.action in ('list', 'retrieve', 'bilan'):
             return [IsAuthenticated(), IsManagerOrOwner()]
         return [IsAuthenticated(), IsManager()]
 
