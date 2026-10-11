@@ -1,7 +1,6 @@
 """Qui lit et écrit quoi : gestionnaire (`admins`) et co-propriétaires
 (`proprietaires`, cloisonnés par bien via PartProprietaire et l'email du jeton)."""
 import datetime
-import unittest
 from decimal import Decimal
 
 from api.models import (
@@ -203,14 +202,21 @@ class CloisonnementTests(Base):
         # Le total reste visible : apport de Bob 1000 − deux versements de 7.
         self.assertEqual(Decimal(str(donnees['capital_total'])), Decimal('986'))
 
-    @unittest.expectedFailure
-    def test_filtre_d_url_mal_forme_ne_provoque_pas_d_erreur_serveur(self):
-        # DÉFAUT (rapport chantier « tests ») : les filtres `?bien=`,
-        # `?appartement=`, `?tache=`, `?proprietaire=` sont passés tels quels
-        # à l'ORM. Une valeur non numérique lève ValueError : erreur 500 au
-        # lieu d'un 400 ou d'une liste vide, sur neuf listes.
-        self.gina.raise_request_exception = False
-        for chemin in ('/api/taches/?bien=abc', '/api/frais/?tache=abc',
-                       '/api/remboursements/?proprietaire=abc'):
-            with self.subTest(chemin=chemin):
-                self.assertLess(self.gina.get(chemin).status_code, 500)
+    def test_filtre_d_url_mal_forme_refuse_en_400(self):
+        # Les filtres portant un identifiant n'acceptent que des chiffres ;
+        # sinon 400, pour le gestionnaire comme pour un propriétaire (avant
+        # correctif : ValueError de l'ORM, erreur 500).
+        chemins = ['/api/parts-proprietaire/?bien=', '/api/appartements/?bien=', '/api/reservations/?bien=',
+                   '/api/reservations/?appartement=', '/api/taches/?bien=', '/api/taches/?appartement=',
+                   '/api/frais/?tache=', '/api/remboursements/?proprietaire=', '/api/apports-initiaux/?bien=',
+                   '/api/versements-revenu/?bien=']
+        for client in (self.gina, self.alice):
+            for chemin in chemins:
+                for valeur in ('abc', '1 OR 1=1', '-1', '1.5', '²'):
+                    with self.subTest(chemin=chemin, valeur=valeur):
+                        route, nom = chemin.rstrip('=').split('?')
+                        resp = client.get(route, {nom: valeur})
+                        self.assertEqual(resp.status_code, 400)
+        # Filtre vide = pas de filtre ; identifiant inconnu = liste vide.
+        self.assertEqual(len(self.ids(self.gina, '/api/taches/?bien=')), 2)
+        self.assertEqual(self.ids(self.gina, '/api/taches/?bien=99999999999999999999'), [])

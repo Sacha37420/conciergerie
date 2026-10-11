@@ -7,7 +7,7 @@ from django.http import StreamingHttpResponse
 from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound, PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -26,6 +26,18 @@ from .serializers import (
 from .permissions import IsManager, IsManagerOrOwner
 from .scoping import is_manager, proprietaire_for, biens_du_proprietaire, reservations_du_proprietaire
 from . import bilan as bilan_module
+
+
+def _filtre_id(request, nom: str) -> str | None:
+    """Valeur d'un filtre d'URL portant un identifiant (`?bien=`, `?tache=`…).
+    Une valeur non numérique est une requête invalide (400) : passée telle
+    quelle à l'ORM, elle levait ValueError, donc une erreur 500."""
+    valeur = request.query_params.get(nom)
+    if not valeur:
+        return None
+    if not (valeur.isascii() and valeur.isdigit()):
+        raise ValidationError({nom: 'Identifiant numérique attendu.'})
+    return valeur
 
 
 def _upload_facture(bien_id: int, file_obj) -> str:
@@ -123,7 +135,7 @@ class PartProprietaireViewSet(viewsets.ModelViewSet):
         qs = PartProprietaire.objects.select_related('bien', 'proprietaire')
         if not is_manager(self.request):
             qs = qs.filter(bien__in=biens_du_proprietaire(self.request.user))
-        bien_id = self.request.query_params.get('bien')
+        bien_id = _filtre_id(self.request, 'bien')
         if bien_id:
             qs = qs.filter(bien_id=bien_id)
         return qs
@@ -155,7 +167,7 @@ class AppartementViewSet(viewsets.ModelViewSet):
         qs = Appartement.objects.select_related('bien')
         if not is_manager(self.request):
             qs = qs.filter(bien__in=biens_du_proprietaire(self.request.user))
-        bien_id = self.request.query_params.get('bien')
+        bien_id = _filtre_id(self.request, 'bien')
         if bien_id:
             qs = qs.filter(bien_id=bien_id)
         return qs
@@ -176,10 +188,10 @@ class ReservationViewSet(viewsets.ModelViewSet):
         qs = Reservation.objects.select_related('appartement__bien')
         if not is_manager(self.request):
             qs = reservations_du_proprietaire(self.request.user).select_related('appartement__bien')
-        appartement_id = self.request.query_params.get('appartement')
+        appartement_id = _filtre_id(self.request, 'appartement')
         if appartement_id:
             qs = qs.filter(appartement_id=appartement_id)
-        bien_id = self.request.query_params.get('bien')
+        bien_id = _filtre_id(self.request, 'bien')
         if bien_id:
             qs = qs.filter(appartement__bien_id=bien_id)
         return qs
@@ -202,10 +214,10 @@ class TacheViewSet(viewsets.ModelViewSet):
         ).prefetch_related('frais')
         if not is_manager(self.request):
             qs = qs.filter(bien__in=biens_du_proprietaire(self.request.user))
-        bien_id = self.request.query_params.get('bien')
+        bien_id = _filtre_id(self.request, 'bien')
         if bien_id:
             qs = qs.filter(bien_id=bien_id)
-        appartement_id = self.request.query_params.get('appartement')
+        appartement_id = _filtre_id(self.request, 'appartement')
         if appartement_id:
             qs = qs.filter(appartement_id=appartement_id)
         statut = self.request.query_params.get('statut')
@@ -232,7 +244,7 @@ class FraisViewSet(viewsets.ModelViewSet):
         qs = Frais.objects.select_related('tache__bien', 'proprietaire_payeur')
         if not is_manager(self.request):
             qs = qs.filter(tache__bien__in=biens_du_proprietaire(self.request.user))
-        tache_id = self.request.query_params.get('tache')
+        tache_id = _filtre_id(self.request, 'tache')
         if tache_id:
             qs = qs.filter(tache_id=tache_id)
         return qs
@@ -331,7 +343,7 @@ class RemboursementViewSet(viewsets.ModelViewSet):
         if not is_manager(self.request):
             proprietaire = proprietaire_for(self.request.user)
             qs = qs.filter(proprietaire=proprietaire) if proprietaire else qs.none()
-        proprietaire_id = self.request.query_params.get('proprietaire')
+        proprietaire_id = _filtre_id(self.request, 'proprietaire')
         if proprietaire_id:
             qs = qs.filter(proprietaire_id=proprietaire_id)
         return qs
@@ -354,7 +366,7 @@ class ApportInitialViewSet(viewsets.ModelViewSet):
         qs = ApportInitial.objects.select_related('bien', 'proprietaire')
         if not is_manager(self.request):
             qs = qs.filter(bien__in=biens_du_proprietaire(self.request.user))
-        bien_id = self.request.query_params.get('bien')
+        bien_id = _filtre_id(self.request, 'bien')
         if bien_id:
             qs = qs.filter(bien_id=bien_id)
         return qs
@@ -378,7 +390,7 @@ class VersementRevenuViewSet(viewsets.ModelViewSet):
         if not is_manager(self.request):
             proprietaire = proprietaire_for(self.request.user)
             qs = qs.filter(proprietaire=proprietaire) if proprietaire else qs.none()
-        bien_id = self.request.query_params.get('bien')
+        bien_id = _filtre_id(self.request, 'bien')
         if bien_id:
             qs = qs.filter(bien_id=bien_id)
         return qs
