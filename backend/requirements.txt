@@ -8,3 +8,4 @@ cryptography>=40.0
 django-cors-headers>=3.14.0
 icalendar>=5.0
 requests>=2.31
+gunicorn>=23.0,<24.0

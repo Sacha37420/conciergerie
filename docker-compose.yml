@@ -16,12 +16,20 @@ services:
     restart: unless-stopped
     env_file: .env
     # Sync Airbnb périodique (iCal) en tâche de fond, sans nouveau service
-    # (pas de Celery/Redis) : une boucle légère tourne à côté de runserver
+    # (pas de Celery/Redis) : une boucle légère tourne à côté du serveur web
     # dans le même conteneur.
+    #
+    # Serveur web : gunicorn (réglages : backend/gunicorn.conf.py), comme le CMD
+    # du Dockerfile que cette commande remplace. Tant que l'image en service date
+    # d'avant gunicorn (ni le paquet ni gunicorn.conf.py dedans), on retombe sur
+    # runserver : la bascule se fait d'elle-même à la reconstruction. La branche
+    # `else` peut être retirée ensuite.
     command: >
       sh -c "python manage.py migrate --no-input &&
              (while true; do python manage.py sync_airbnb_calendars; sleep 1800; done &) &&
-             python manage.py runserver 0.0.0.0:8000"
+             if [ -f gunicorn.conf.py ] && python -c 'import gunicorn' 2>/dev/null;
+             then exec gunicorn -c gunicorn.conf.py config.wsgi:application;
+             else exec python manage.py runserver 0.0.0.0:8000; fi"
     ports:
       - "8084:8000"
     networks:
@@ -36,7 +44,16 @@ services:
     build: ./frontend
     container_name: conciergerie-frontend
     restart: unless-stopped
-    env_file: .env
+    # Uniquement les variables que lit nginx-entrypoint.sh pour écrire env.js —
+    # aucune n'est secrète (env.js est servi au navigateur). `env_file: .env`
+    # donnait à ce conteneur nginx tous les secrets de l'app.
+    environment:
+      DOMAIN: ${DOMAIN:-}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-}
+      KEYCLOAK_PUBLIC_URL: ${KEYCLOAK_PUBLIC_URL:-}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-}
+      PORT_BACKEND: ${PORT_BACKEND:-}
+      PORT_FRONTEND: ${PORT_FRONTEND:-}
     ports:
       - "4202:80"
     networks:
