@@ -9,7 +9,7 @@ from .models import (
     Tache, Frais, Remboursement, ApportInitial, VersementRevenu,
 )
 from . import bilan as bilan_module
-from .scoping import is_manager
+from .scoping import is_manager, proprietaire_for
 
 
 class ProprietaireSerializer(serializers.ModelSerializer):
@@ -83,13 +83,20 @@ class ReservationSerializer(serializers.ModelSerializer):
         if obj.montant_revenu is None or obj.date_paiement is None:
             return []
         bien = obj.appartement.bien
+        parts = bien.parts.select_related('proprietaire')
+        # Même règle que le bilan (BienViewSet.bilan) : un co-propriétaire ne
+        # reçoit que sa propre part, le gestionnaire les voit toutes.
+        request = self.context.get('request')
+        if request is not None and not is_manager(request):
+            proprietaire = proprietaire_for(request.user)
+            parts = parts.filter(proprietaire=proprietaire) if proprietaire else parts.none()
         return [
             {
                 'proprietaire_id': part.proprietaire_id,
                 'proprietaire_nom': part.proprietaire.nom,
                 'montant': bilan_module.part_reservation(obj, part.proprietaire),
             }
-            for part in bien.parts.select_related('proprietaire')
+            for part in parts
         ]
 
 

@@ -202,6 +202,19 @@ class CloisonnementTests(Base):
         # Le total reste visible : apport de Bob 1000 − deux versements de 7.
         self.assertEqual(Decimal(str(donnees['capital_total'])), Decimal('986'))
 
+    def test_part_par_sejour_un_proprietaire_ne_recoit_que_la_sienne(self):
+        # Même règle que le bilan : la part des autres co-propriétaires dans
+        # un séjour (donc leur poids dans le capital) n'est rendue qu'au
+        # gestionnaire.
+        Reservation.objects.filter(pk=self.res_maison.pk).update(montant_revenu=Decimal('200'), date_paiement=J)
+        url = f'/api/reservations/{self.res_maison.pk}/'
+        self.assertEqual({p['proprietaire_nom'] for p in self.gina.get(url).json()['parts_proprietaires']},
+                         {'Alice', 'Bob'})
+        for client, fiche in ((self.alice, self.p_alice), (self.bob, self.p_bob)):
+            for donnees in (client.get(url).json(), client.get('/api/reservations/').json()[0]):
+                self.assertEqual([p['proprietaire_id'] for p in donnees['parts_proprietaires']], [fiche.pk])
+                self.assertIsNotNone(donnees['parts_proprietaires'][0]['montant'])
+
     def test_filtre_d_url_mal_forme_refuse_en_400(self):
         # Les filtres portant un identifiant n'acceptent que des chiffres ;
         # sinon 400, pour le gestionnaire comme pour un propriétaire (avant
