@@ -9,11 +9,11 @@ docker-compose.yml) et à la demande via POST /api/sync/airbnb/.
 """
 import datetime
 
-import requests
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from icalendar import Calendar
 
+from api import ical_fetch
 from api.models import Appartement, Reservation
 
 
@@ -36,9 +36,9 @@ class Command(BaseCommand):
 
     def _sync_appartement(self, appartement: Appartement) -> None:
         try:
-            resp = requests.get(appartement.airbnb_ical_url, timeout=15)
-            resp.raise_for_status()
-            cal = Calendar.from_ical(resp.content)
+            # Jamais requests.get directement : ical_fetch refuse toute
+            # destination interne, à chaque appel et à chaque redirection.
+            cal = Calendar.from_ical(ical_fetch.telecharger(appartement.airbnb_ical_url))
         except Exception as exc:
             appartement.dernier_sync_erreur = str(exc)[:2000]
             appartement.dernier_sync_at = timezone.now()

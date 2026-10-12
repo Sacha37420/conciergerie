@@ -7,7 +7,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from api import storage_client
+from api import ical_fetch, storage_client
 from api.authentication import KeycloakJWTAuthentication
 from api.models import Appartement, Bien, PartProprietaire, Proprietaire
 
@@ -53,7 +53,7 @@ def jeton(uid='alice', groups=('proprietaires',), azp=CLIENT_ID, email=ABSENT,
 
 
 def _reseau_interdit(*args, **kwargs):
-    raise AssertionError(f'appel réseau non simulé : {args[1:3]}')
+    raise AssertionError(f'appel réseau non simulé : {args[:3]}')
 
 
 @override_settings(**REGLAGES)
@@ -64,6 +64,8 @@ class Base(TestCase):
         self._patch(mock.patch.object(KeycloakJWTAuthentication, '_get_jwks_client',
                                       classmethod(lambda cls: JwksLocal())))
         self._patch(mock.patch('requests.sessions.Session.request', _reseau_interdit))
+        # Aucune résolution DNS réelle : un test qui en a besoin la simule.
+        self._patch(mock.patch.object(ical_fetch, '_resoudre', _reseau_interdit))
         self.storage = mock.Mock()
         self.storage.upload.side_effect = lambda bien_id, chemin, *a, **k: {'relative_path': chemin}
         for nom in ('add_member', 'remove_member', 'upload', 'download', 'delete'):

@@ -7,7 +7,7 @@ from unittest import mock
 import requests
 from django.core.management import call_command
 
-from api.management.commands import sync_airbnb_calendars as commande
+from api import ical_fetch
 from api.models import Appartement, Reservation
 from .base import Base
 
@@ -38,13 +38,17 @@ class SyncBase(Base):
         Appartement.objects.filter(pk=self.appt_maison.pk).update(airbnb_ical_url=URL_MAISON)
         self.flux = {}
         self.http = mock.Mock(side_effect=self._get)
-        self._patch(mock.patch.object(commande.requests, 'get', self.http))
+        self._patch(mock.patch.object(ical_fetch.requests, 'get', self.http))
+        # DNS simulé : tout nom rend une adresse publique, sauf mention contraire.
+        self.dns = {}
+        self._patch(mock.patch.object(ical_fetch, '_resoudre',
+                                      lambda hote, port: self.dns.get(hote, ['34.120.10.20'])))
 
     def _get(self, url, **kw):
         contenu = self.flux[url]
         if isinstance(contenu, Exception):
             raise contenu
-        return mock.Mock(content=contenu, raise_for_status=mock.Mock())
+        return mock.Mock(status_code=200, headers={}, content=contenu, raise_for_status=mock.Mock())
 
     def synchroniser(self):
         out, err = StringIO(), StringIO()
@@ -68,7 +72,7 @@ class SyncAirbnbTests(SyncBase):
         sortie, erreurs = self.synchroniser()
         self.assertEqual(erreurs, '')
         self.assertIn('3 événement(s)', sortie)
-        self.http.assert_called_once_with(URL_MAISON, timeout=15)
+        self.http.assert_called_once_with(URL_MAISON, timeout=15, allow_redirects=False)
         a = Reservation.objects.get(uid_externe='a@airbnb.com')
         self.assertEqual((a.appartement, a.source, a.statut, a.libelle),
                          (self.appt_maison, 'airbnb', 'confirmee', 'Reserved'))
@@ -145,7 +149,7 @@ class SyncAirbnbTests(SyncBase):
         # Erreur HTTP (404 : lien iCal révoqué).
         self.flux[URL_MAISON] = ics()
         self.http.side_effect = lambda url, **kw: mock.Mock(
-            content=b'', raise_for_status=mock.Mock(side_effect=requests.HTTPError('404 Not Found')))
+            status_code=404, headers={}, content=b'', raise_for_status=mock.Mock(side_effect=requests.HTTPError('404 Not Found')))
         _, erreurs = self.synchroniser()
         self.assertIn('404', erreurs)
         self.assertEqual(self.statuts(), {'a': 'confirmee'})

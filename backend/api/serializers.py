@@ -9,6 +9,7 @@ from .models import (
     Tache, Frais, Remboursement, ApportInitial, VersementRevenu,
 )
 from . import bilan as bilan_module
+from . import ical_fetch
 from .scoping import is_manager, proprietaire_for
 
 
@@ -40,6 +41,17 @@ class AppartementSerializer(serializers.ModelSerializer):
             'airbnb_ical_url', 'dernier_sync_at', 'dernier_sync_erreur',
         ]
         read_only_fields = ['dernier_sync_at', 'dernier_sync_erreur']
+
+    def validate_airbnb_ical_url(self, value):
+        # Le backend appellera cette URL : elle ne doit désigner aucune
+        # destination interne (api/ical_fetch.py). Une URL inchangée n'est pas
+        # recontrôlée ici — elle l'est de toute façon à chaque appel.
+        if value and value != getattr(self.instance, 'airbnb_ical_url', None):
+            try:
+                ical_fetch.verifier_url(value)
+            except ical_fetch.DestinationInterdite as exc:
+                raise serializers.ValidationError(str(exc)) from exc
+        return value
 
 
 class BienSerializer(serializers.ModelSerializer):
