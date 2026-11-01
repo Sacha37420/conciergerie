@@ -60,7 +60,11 @@ class MeView(APIView):
             'username': request.user.username,
             'groups': groups,
             'is_manager': is_manager(request),
-            'proprietaire': ProprietaireSerializer(proprietaire).data if proprietaire else None,
+            # Avec la requête : sans elle, le sérialiseur ne sait pas qui lit
+            # (et rend `null`). Un co-propriétaire n'y lit pas les notes du
+            # gestionnaire, même sur sa propre fiche.
+            'proprietaire': (ProprietaireSerializer(proprietaire, context={'request': request}).data
+                             if proprietaire else None),
         })
 
 

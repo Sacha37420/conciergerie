@@ -79,7 +79,7 @@
                     <td><strong>{{ appart.nom }}</strong></td>
                     <td>{{ appart.capacite ?? '—' }}</td>
                     <td>
-                      @if (appart.airbnb_ical_url) {
+                      @if (appart.airbnb_ical_configure) {
                         <span class="badge badge-green">iCal configuré</span>
                       } @else {
                         <span class="badge badge-grey">Non configuré</span>

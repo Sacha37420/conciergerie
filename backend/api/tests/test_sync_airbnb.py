@@ -38,7 +38,7 @@ class SyncBase(Base):
         Appartement.objects.filter(pk=self.appt_maison.pk).update(airbnb_ical_url=URL_MAISON)
         self.flux = {}
         self.http = mock.Mock(side_effect=self._get)
-        self._patch(mock.patch.object(ical_fetch.requests, 'get', self.http))
+        self._patch(mock.patch.object(ical_fetch, '_get', self.http))
         # DNS simulé : tout nom rend une adresse publique, sauf mention contraire.
         self.dns = {}
         self._patch(mock.patch.object(ical_fetch, '_resoudre',
@@ -72,7 +72,7 @@ class SyncAirbnbTests(SyncBase):
         sortie, erreurs = self.synchroniser()
         self.assertEqual(erreurs, '')
         self.assertIn('3 événement(s)', sortie)
-        self.http.assert_called_once_with(URL_MAISON, timeout=15, allow_redirects=False)
+        self.http.assert_called_once_with(URL_MAISON, adresse='34.120.10.20')
         a = Reservation.objects.get(uid_externe='a@airbnb.com')
         self.assertEqual((a.appartement, a.source, a.statut, a.libelle),
                          (self.appt_maison, 'airbnb', 'confirmee', 'Reserved'))

@@ -1,10 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-
-interface EnvWindow {
-  __env?: { apiUrl?: string };
-}
+import { apiUrl } from './env';
 
 export interface Me {
   email: string;
@@ -14,6 +11,9 @@ export interface Me {
   proprietaire: Proprietaire | null;
 }
 
+/** Fiche d'un propriétaire. `notes` n'est rendu qu'au gestionnaire ; une fiche
+ *  imbriquée (`*_detail`) d'un propriétaire sans bien commun avec un
+ *  co-propriétaire lui est rendue `null`. */
 export interface Proprietaire {
   id?: number;
   nom: string;
@@ -35,7 +35,7 @@ export interface PartProprietaire {
   id?: number;
   bien: number;
   proprietaire: number;
-  proprietaire_detail?: Proprietaire;
+  proprietaire_detail?: Proprietaire | null;
 }
 
 export interface Appartement {
@@ -44,7 +44,10 @@ export interface Appartement {
   nom: string;
   capacite?: number | null;
   description?: string;
+  /** Lien secret : rendu au gestionnaire seul (absent pour un co-propriétaire). */
   airbnb_ical_url?: string;
+  /** Rendu à tous : un lien iCal est-il configuré ? */
+  airbnb_ical_configure?: boolean;
   dernier_sync_at?: string | null;
   dernier_sync_erreur?: string;
 }
@@ -150,7 +153,7 @@ export interface Frais {
   taux_horaire: number | string;
   payeur: 'maison' | 'proprietaire';
   proprietaire_payeur?: number | null;
-  proprietaire_payeur_detail?: Proprietaire;
+  proprietaire_payeur_detail?: Proprietaire | null;
   facture?: string | null;
   date_paiement?: string | null;
   notes?: string;
@@ -173,7 +176,7 @@ export interface Tache {
   statut: 'a_faire' | 'en_cours' | 'terminee' | 'annulee';
   proprietaire_responsable?: number | null;
   entreprise_responsable?: number | null;
-  proprietaire_responsable_detail?: Proprietaire;
+  proprietaire_responsable_detail?: Proprietaire | null;
   entreprise_responsable_detail?: Entreprise;
   frais?: Frais[];
   cout_total?: number | string;
@@ -187,8 +190,7 @@ export class ApiService {
   private http = inject(HttpClient);
 
   private get base(): string {
-    return (window as unknown as EnvWindow).__env?.apiUrl
-      ?? 'http://localhost:8084';
+    return apiUrl();
   }
 
   private url(path: string): string {

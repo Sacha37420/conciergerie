@@ -21,18 +21,21 @@ capital. Accès : `proprietaires,admins`.
 - [x] 141 tests backend (10 fichiers) ; `cloisonnement.spec.ts` identique au gabarit
 **Vérifié le :** 2026-10-31 — relevé par lecture (version en service = `c0235cf`), tests non rejoués.
 
-## Lot 2 — Confidentialité entre co-propriétaires   ·   statut : à faire
-**Objectif :** un co-propriétaire ne voit que ce qui le concerne. Ⓟ Règles à confirmer avant de coder.
+## Lot 2 — Confidentialité entre co-propriétaires   ·   statut : livré
+**Objectif :** un co-propriétaire ne voit que ce qui le concerne. Règles tranchées par le
+propriétaire le 2026-10-31 (chantier « failles ») : `airbnb_ical_url` au gestionnaire seul ; les
+`notes` du gestionnaire sur les co-propriétaires au gestionnaire seul ; les contacts (nom, email,
+téléphone) visibles entre co-propriétaires d'un même bien, jamais ceux d'un autre bien.
 **Constat [C] :**
 - `airbnb_ical_url`, un lien secret, est rendu aux co-propriétaires (`serializers.py:41`).
 - Les email, téléphone et `notes` du gestionnaire sur les autres co-propriétaires sont visibles dans
   les parts : point laissé au propriétaire par `conciergerie-builder.md`.
 **Tâches :**
-- [ ] Masquer `airbnb_ical_url` à un non-gestionnaire
-- [ ] Ⓟ Masquer ou non les coordonnées et les `notes` des autres co-propriétaires
+- [x] Masquer `airbnb_ical_url` à un non-gestionnaire (`airbnb_ical_configure` le remplace) ; une erreur de synchronisation qui recopie l'URL n'est rendue que sous forme générique
+- [x] `notes` masquées aux non-gestionnaires, `/api/me/` compris ; fiche d'un propriétaire sans bien commun rendue `null` (parts, responsable de tâche, payeur de frais)
 **Tests à passer avant de clore le lot :**
-- [ ] Un co-propriétaire ne reçoit ni l'URL iCal ni les coordonnées des autres ; le gestionnaire les reçoit
-**Vérifié le :**
+- [x] Un co-propriétaire ne reçoit ni l'URL iCal, ni les notes, ni les coordonnées des co-propriétaires d'un autre bien ; le gestionnaire reçoit tout (`test_confidentialite.py`)
+**Vérifié le :** 2026-11-01 — non déployé (tests backend verts par `chantiers/tests/essai.sh`).
 
 ## Lot 3 — Justesse du bilan   ·   statut : à faire
 **Objectif :** le grand livre rend compte de tous les mouvements, sans erreur d'arrondi.
@@ -46,20 +49,22 @@ capital. Accès : `proprietaires,admins`.
 - [ ] Bilan d'un remboursement sans frais lié conforme à la règle retenue ; montants rendus en chaînes décimales
 **Vérifié le :**
 
-## Lot 4 — iCal sans ré-association DNS   ·   statut : à faire
+## Lot 4 — iCal sans ré-association DNS   ·   statut : livré
 **Objectif :** fermer la limite connue de la protection contre les adresses internes.
 **Constat [C] :** le nom est résolu deux fois, une fois pour le contrôle et une fois par `requests`.
 **Tâches :**
-- [ ] Se connecter à l'IP déjà contrôlée, en gardant le SNI et l'en-tête `Host`
+- [x] Se connecter à l'IP déjà contrôlée, en gardant le SNI et l'en-tête `Host` (certificat vérifié contre le nom), à chaque redirection ; ni mandataire ni `.netrc` de l'environnement
+- [x] Aucune erreur enregistrée ou journalisée ne recopie plus l'URL secrète (`ical_fetch.message_erreur`)
 **Tests à passer avant de clore le lot :**
-- [ ] Un DNS simulé dont la réponse change entre deux résolutions est refusé
-**Vérifié le :**
+- [x] Un DNS simulé dont la réponse change entre deux résolutions est refusé ; une redirection vers une adresse interne est refusée (`test_ical_epinglage.py`, vrais sockets et vrai TLS)
+**Vérifié le :** 2026-11-01 — non déployé (tests backend verts par `chantiers/tests/essai.sh`).
 
 ## Lot 5 — Gabarit front, documentation et chemin à portes   ·   statut : à faire
 **Objectif :** même comportement que le gabarit corrigé (T3), un README, un déploiement par le moteur (T1).
 **Tâches :**
-- [ ] `git rm --cached .keycloak-client-opts` (le fichier est suivi par git, ce que `validate-app.sh` refuse)
-- [ ] Polices en chemin relatif ; `redirectUri` sur la page courante (`keycloak.service.ts:32`) ; `tokenBases()` ; PKCE
+- [x] `git rm --cached .keycloak-client-opts` — constaté le 2026-11-01 : le fichier n'est plus suivi (`git ls-files`)
+- [x] Polices en chemin relatif ; `redirectUri` sur la page courante (`keycloak.service.ts:32`) ; `tokenBases()` ; PKCE (chantier « failles », I2 ; non déployé)
+- [x] Ports liés à `${LAB_BIND_ADDR:-127.0.0.1}` (chantier « failles », I1 ; non déployé)
 - [ ] `README.md` : rôles (gestionnaire, co-propriétaire), synchronisation iCal, bilan
 **Tests à passer avant de clore le lot :**
 - [ ] `validate-app.sh conciergerie --quality-only` vert ; lien direct conservé ; cloisonnement `ok` par le moteur

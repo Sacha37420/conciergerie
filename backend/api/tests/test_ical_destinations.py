@@ -116,7 +116,7 @@ class TelechargerTests(_DnsSimule):
 
     def setUp(self):
         super().setUp()
-        p = mock.patch.object(ical_fetch.requests, 'get')
+        p = mock.patch.object(ical_fetch, '_get')
         self.get = p.start()
         self.addCleanup(p.stop)
 
@@ -126,7 +126,7 @@ class TelechargerTests(_DnsSimule):
     def test_telechargement_sans_suivi_automatique_des_redirections(self):
         self.get.return_value = _rep(200, b'BEGIN:VCALENDAR')
         self.assertEqual(ical_fetch.telecharger('https://www.airbnb.fr/c.ics'), b'BEGIN:VCALENDAR')
-        self.get.assert_called_once_with('https://www.airbnb.fr/c.ics', timeout=15, allow_redirects=False)
+        self.get.assert_called_once_with('https://www.airbnb.fr/c.ics', adresse=PUBLIQUE)
 
     def test_destination_interne_aucun_appel(self):
         self.dns['storage-backend'] = ['172.18.0.7']

@@ -1,5 +1,5 @@
 from decimal import Decimal
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from django.conf import settings
 from django.urls import reverse
@@ -10,13 +10,39 @@ from .models import (
 )
 from . import bilan as bilan_module
 from . import ical_fetch
-from .scoping import is_manager, proprietaire_for
+from .scoping import is_manager, proprietaire_for, proprietaires_visibles
+
+
+def _gestionnaire(serializer) -> bool:
+    """L'appelant est-il le gestionnaire ? Sans requête dans le contexte, la
+    réponse est non : un rendu hors vue ne rend que ce qu'un co-propriétaire
+    verrait (échec fermé)."""
+    request = serializer.context.get('request')
+    return request is not None and is_manager(request)
 
 
 class ProprietaireSerializer(serializers.ModelSerializer):
+    """Règle du propriétaire (chantier « failles », 2026-10-31) :
+    - `notes` (les notes du gestionnaire) : au gestionnaire seul ;
+    - contacts (nom, email, téléphone) : au gestionnaire, et entre
+      co-propriétaires d'un MÊME bien. Le propriétaire d'un autre bien est
+      rendu `null` — c'est ce sérialiseur qui sert à toutes les fiches
+      imbriquées (parts d'un bien, responsable d'une tâche, payeur d'un frais,
+      /api/me/), la règle tient donc pour tous ces chemins."""
+
     class Meta:
         model = Proprietaire
         fields = ['id', 'nom', 'email', 'telephone', 'notes']
+
+    def to_representation(self, instance):
+        if _gestionnaire(self):
+            return super().to_representation(instance)
+        request = self.context.get('request')
+        if request is None or instance.pk not in proprietaires_visibles(request):
+            return None
+        data = super().to_representation(instance)
+        data.pop('notes', None)
+        return data
 
 
 class EntrepriseSerializer(serializers.ModelSerializer):
@@ -33,14 +59,41 @@ class PartProprietaireSerializer(serializers.ModelSerializer):
         fields = ['id', 'bien', 'proprietaire', 'proprietaire_detail']
 
 
+def _contient_l_url(texte: str, url: str) -> bool:
+    """Le texte recopie-t-il l'URL, ou un morceau qui suffit à la retrouver ?"""
+    parties = urlsplit(url)
+    morceaux = [url, parties.path, parties.query, parties.netloc + parties.path]
+    return any(m and len(m) > 1 and m in texte for m in morceaux)
+
+
 class AppartementSerializer(serializers.ModelSerializer):
+    # Ce que voit un co-propriétaire à la place du lien secret.
+    airbnb_ical_configure = serializers.SerializerMethodField()
+
     class Meta:
         model = Appartement
         fields = [
             'id', 'bien', 'nom', 'capacite', 'description',
-            'airbnb_ical_url', 'dernier_sync_at', 'dernier_sync_erreur',
+            'airbnb_ical_url', 'airbnb_ical_configure', 'dernier_sync_at', 'dernier_sync_erreur',
         ]
         read_only_fields = ['dernier_sync_at', 'dernier_sync_erreur']
+
+    def get_airbnb_ical_configure(self, obj) -> bool:
+        return bool(obj.airbnb_ical_url)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if _gestionnaire(self):
+            return data
+        # `airbnb_ical_url` est un lien secret (qui l'a lit le calendrier de
+        # l'annonce) : au gestionnaire seul. Une erreur de synchronisation
+        # enregistrée avant le lot 4 peut le recopier (« for url: … ») : elle
+        # n'est alors rendue que sous une forme générique.
+        url = data.pop('airbnb_ical_url', '') or ''
+        erreur = data.get('dernier_sync_erreur') or ''
+        if erreur and url and _contient_l_url(erreur, url):
+            data['dernier_sync_erreur'] = 'Échec de la synchronisation.'
+        return data
 
     def validate_airbnb_ical_url(self, value):
         # Le backend appellera cette URL : elle ne doit désigner aucune

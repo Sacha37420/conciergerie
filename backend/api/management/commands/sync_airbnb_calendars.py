@@ -40,10 +40,13 @@ class Command(BaseCommand):
             # destination interne, à chaque appel et à chaque redirection.
             cal = Calendar.from_ical(ical_fetch.telecharger(appartement.airbnb_ical_url))
         except Exception as exc:
-            appartement.dernier_sync_erreur = str(exc)[:2000]
+            # Jamais str(exc) : les erreurs de requests recopient l'URL, lien
+            # secret réservé au gestionnaire (ical_fetch.message_erreur).
+            message = ical_fetch.message_erreur(exc)
+            appartement.dernier_sync_erreur = message
             appartement.dernier_sync_at = timezone.now()
             appartement.save(update_fields=['dernier_sync_erreur', 'dernier_sync_at'])
-            self.stderr.write(f'[{appartement}] échec sync : {exc}')
+            self.stderr.write(f'[{appartement}] échec sync : {message}')
             return
 
         uids_vus = set()

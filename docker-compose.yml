@@ -31,7 +31,7 @@ services:
              then exec gunicorn -c gunicorn.conf.py config.wsgi:application;
              else exec python manage.py runserver 0.0.0.0:8000; fi"
     ports:
-      - "8084:8000"
+      - "${LAB_BIND_ADDR:-127.0.0.1}:8084:8000"
     networks:
       - sso-net
       - dev-net
@@ -55,7 +55,7 @@ services:
       PORT_BACKEND: ${PORT_BACKEND:-}
       PORT_FRONTEND: ${PORT_FRONTEND:-}
     ports:
-      - "4202:80"
+      - "${LAB_BIND_ADDR:-127.0.0.1}:4202:80"
     networks:
       - sso-net
     labels:

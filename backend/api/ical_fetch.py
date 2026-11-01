@@ -13,15 +13,22 @@ privées et tombent donc ici). Le contrôle est fait à l'enregistrement
 (`AppartementSerializer`) ET à chaque appel, redirections comprises : elles
 sont suivies à la main, une par une, jamais par `requests`.
 
-Limite connue : le nom est résolu une fois pour le contrôle, puis une seconde
-fois par `requests` pour la connexion. Un DNS qui change de réponse entre les
-deux n'est pas couvert (il faudrait épingler l'adresse contrôlée).
+Ré-association DNS (lot 4) : le nom n'est résolu qu'UNE fois par étape, pour
+le contrôle, et la connexion se fait à l'adresse contrôlée — jamais à une
+seconde résolution. Le nom reste celui de l'URL pour tout le reste : en-tête
+`Host`, SNI, et vérification du certificat (faite contre le nom, pas contre
+l'adresse). Une redirection est une nouvelle étape : résolue, contrôlée,
+épinglée à son tour. `requests` ne lit ni mandataire (`HTTP(S)_PROXY`) ni
+`.netrc` : un mandataire se résoudrait lui-même, hors contrôle.
 """
 import ipaddress
 import socket
 from urllib.parse import urljoin, urlsplit
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.connection import HTTPConnection, HTTPSConnection
+from urllib3.connectionpool import HTTPConnectionPool, HTTPSConnectionPool
 
 TIMEOUT = 15
 MAX_REDIRECTIONS = 5
@@ -32,8 +39,17 @@ _PORTS = {'http': 80, 'https': 443}
 _REFUS = "Destination refusée : l'adresse doit être un site public joignable en http(s)."
 
 
+# Vérification du certificat : `True` = magasin de certificats du système.
+# Les tests le remplacent par leur autorité locale, jamais par `False`.
+VERIFIER_CERTIFICAT = True
+
+
 class DestinationInterdite(ValueError):
     """L'URL ne désigne pas (ou plus) une destination publique en http(s)."""
+
+
+class ReponseRefusee(ValueError):
+    """Le serveur a répondu, mais pas par un flux (code d'erreur HTTP)."""
 
 
 def _resoudre(hote: str, port: int) -> list[str]:
@@ -55,9 +71,10 @@ def _est_publique(adresse: str) -> bool:
     return ip.is_global and not ip.is_multicast
 
 
-def verifier_url(url: str) -> None:
+def verifier_url(url: str) -> list[str]:
     """Lève DestinationInterdite si `url` n'est pas une URL http(s) dont
-    toutes les adresses sont publiques."""
+    toutes les adresses sont publiques ; sinon rend ces adresses, celles
+    auxquelles la connexion doit se faire (`telecharger`)."""
     try:
         parties = urlsplit(url or '')
         schema, hote, port = parties.scheme.lower(), parties.hostname, parties.port
@@ -71,20 +88,88 @@ def verifier_url(url: str) -> None:
         raise DestinationInterdite(_REFUS) from exc
     if not adresses or not all(_est_publique(a) for a in adresses):
         raise DestinationInterdite(_REFUS)
+    return adresses
+
+
+def _pool_epingle(base_pool, base_conn, adresse: str):
+    """Classe de pool urllib3 dont les connexions ouvrent leur socket vers
+    `adresse` au lieu de résoudre le nom. Seule la création du socket est
+    touchée : le nom (`self.host`) reste celui de l'URL pour l'en-tête
+    `Host`, le SNI et la vérification du certificat, faits après."""
+
+    class Connexion(base_conn):
+        def _new_conn(self):
+            # `_dns_host` est ce qu'urllib3 passe à create_connection ; il est
+            # rétabli avant le TLS, qui lit le nom par `self.host`.
+            nom = self._dns_host
+            self._dns_host = adresse
+            try:
+                return super()._new_conn()
+            finally:
+                self._dns_host = nom
+
+    return type(f'Epingle{base_pool.__name__}', (base_pool,), {'ConnectionCls': Connexion})
+
+
+class _AdaptateurEpingle(HTTPAdapter):
+    """Adaptateur `requests` lié à UNE adresse déjà contrôlée."""
+
+    def __init__(self, adresse: str):
+        self._adresse = adresse
+        super().__init__(max_retries=0)
+
+    def init_poolmanager(self, *args, **kwargs):
+        super().init_poolmanager(*args, **kwargs)
+        self.poolmanager.pool_classes_by_scheme = {
+            'http': _pool_epingle(HTTPConnectionPool, HTTPConnection, self._adresse),
+            'https': _pool_epingle(HTTPSConnectionPool, HTTPSConnection, self._adresse),
+        }
+
+
+def _get(url: str, adresse: str) -> requests.Response:
+    """GET de `url` en se connectant à `adresse` (déjà contrôlée), sans suivre
+    de redirection. Seul point de ce module qui ouvre une connexion."""
+    with requests.Session() as session:
+        session.trust_env = False          # ni mandataire, ni .netrc, ni CA de l'environnement
+        adaptateur = _AdaptateurEpingle(adresse)
+        session.mount('http://', adaptateur)
+        session.mount('https://', adaptateur)
+        resp = session.get(url, timeout=TIMEOUT, allow_redirects=False, verify=VERIFIER_CERTIFICAT)
+        resp.content                       # lu avant la fermeture de la session
+        return resp
 
 
 def telecharger(url: str) -> bytes:
     """Contenu de `url`. Chaque étape (URL de départ, puis chaque redirection)
-    est contrôlée avant d'être appelée."""
+    est contrôlée, puis jointe à l'adresse contrôlée et à elle seule."""
     for _ in range(MAX_REDIRECTIONS + 1):
-        verifier_url(url)
-        resp = requests.get(url, timeout=TIMEOUT, allow_redirects=False)
+        adresses = verifier_url(url)
+        resp = _get(url, adresse=adresses[0])
         if resp.status_code in _REDIRECTIONS:
             cible = resp.headers.get('Location')
             if not cible:
                 raise DestinationInterdite('Redirection sans destination.')
             url = urljoin(url, cible)
             continue
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            raise ReponseRefusee(f'Le serveur du calendrier a répondu {resp.status_code}.')
         return resp.content
     raise DestinationInterdite('Trop de redirections.')
+
+
+def message_erreur(exc: Exception) -> str:
+    """Message d'échec à conserver (`dernier_sync_erreur`) et à journaliser :
+    JAMAIS l'URL. Les erreurs de `requests`/urllib3 la recopient (« for url:
+    https://…?s=<secret> », « Max retries exceeded with url: … ») — or l'URL
+    iCal est un lien secret réservé au gestionnaire."""
+    if isinstance(exc, (DestinationInterdite, ReponseRefusee)):
+        return str(exc)
+    if isinstance(exc, requests.exceptions.SSLError):
+        return 'Certificat du serveur du calendrier refusé.'
+    if isinstance(exc, requests.Timeout):
+        return 'Le serveur du calendrier ne répond pas (délai dépassé).'
+    if isinstance(exc, requests.ConnectionError):
+        return 'Connexion au serveur du calendrier impossible.'
+    if isinstance(exc, requests.RequestException):
+        return 'Échec de la requête vers le serveur du calendrier.'
+    return "Le flux reçu n'est pas un calendrier iCal lisible."
