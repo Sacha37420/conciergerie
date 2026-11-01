@@ -55,8 +55,9 @@ téléphone) visibles entre co-propriétaires d'un même bien, jamais ceux d'un 
 **Tâches :**
 - [x] Se connecter à l'IP déjà contrôlée, en gardant le SNI et l'en-tête `Host` (certificat vérifié contre le nom), à chaque redirection ; ni mandataire ni `.netrc` de l'environnement
 - [x] Aucune erreur enregistrée ou journalisée ne recopie plus l'URL secrète (`ical_fetch.message_erreur`)
+- [x] Flux borné à 5 Mo, lu par morceaux (`Content-Length` contrôlé d'abord) ; délai total de 30 s par étape, en-têtes compris
 **Tests à passer avant de clore le lot :**
-- [x] Un DNS simulé dont la réponse change entre deux résolutions est refusé ; une redirection vers une adresse interne est refusée (`test_ical_epinglage.py`, vrais sockets et vrai TLS)
+- [x] Un DNS simulé dont la réponse change entre deux résolutions est refusé ; une redirection vers une adresse interne est refusée (`test_ical_epinglage.py`, vrais sockets et vrai TLS) ; 5 Mo acceptés, 5 Mo + 1 octet refusés, flux sans `Content-Length` coupé, flux goutte à goutte coupé au délai
 **Vérifié le :** 2026-11-01 — non déployé (tests backend verts par `chantiers/tests/essai.sh`).
 
 ## Lot 5 — Gabarit front, documentation et chemin à portes   ·   statut : à faire

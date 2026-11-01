@@ -23,6 +23,8 @@ l'adresse). Une redirection est une nouvelle étape : résolue, contrôlée,
 """
 import ipaddress
 import socket
+import threading
+import time
 from urllib.parse import urljoin, urlsplit
 
 import requests
@@ -30,7 +32,13 @@ from requests.adapters import HTTPAdapter
 from urllib3.connection import HTTPConnection, HTTPSConnection
 from urllib3.connectionpool import HTTPConnectionPool, HTTPSConnectionPool
 
-TIMEOUT = 15
+TIMEOUT = 15                      # par opération réseau (connexion, chaque lecture)
+# Un flux iCal Airbnb fait quelques dizaines de ko. Au-delà de 5 Mo, ou après
+# 30 s de transfert, le flux est refusé : un lien qui sert un flux sans fin (ou
+# goutte à goutte) épuisait la mémoire du backend (1 Go) ou le bloquait.
+MAX_OCTETS = 5 * 1024 * 1024
+DELAI_TOTAL = 30                  # secondes, pour une étape (lecture du corps comprise)
+_MORCEAU = 64 * 1024
 MAX_REDIRECTIONS = 5
 _REDIRECTIONS = (301, 302, 303, 307, 308)
 _PORTS = {'http': 80, 'https': 443}
@@ -49,7 +57,8 @@ class DestinationInterdite(ValueError):
 
 
 class ReponseRefusee(ValueError):
-    """Le serveur a répondu, mais pas par un flux (code d'erreur HTTP)."""
+    """Le serveur a répondu, mais pas par un flux utilisable (code d'erreur
+    HTTP, flux trop volumineux, transfert trop long). Message sans l'URL."""
 
 
 def _resoudre(hote: str, port: int) -> list[str]:
@@ -91,7 +100,7 @@ def verifier_url(url: str) -> list[str]:
     return adresses
 
 
-def _pool_epingle(base_pool, base_conn, adresse: str):
+def _pool_epingle(base_pool, base_conn, adresse: str, sockets: list):
     """Classe de pool urllib3 dont les connexions ouvrent leur socket vers
     `adresse` au lieu de résoudre le nom. Seule la création du socket est
     touchée : le nom (`self.host`) reste celui de l'URL pour l'en-tête
@@ -104,9 +113,11 @@ def _pool_epingle(base_pool, base_conn, adresse: str):
             nom = self._dns_host
             self._dns_host = adresse
             try:
-                return super()._new_conn()
+                sock = super()._new_conn()
             finally:
                 self._dns_host = nom
+            sockets.append(sock)        # pour la minuterie du délai total (_get)
+            return sock
 
     return type(f'Epingle{base_pool.__name__}', (base_pool,), {'ConnectionCls': Connexion})
 
@@ -116,26 +127,81 @@ class _AdaptateurEpingle(HTTPAdapter):
 
     def __init__(self, adresse: str):
         self._adresse = adresse
+        self.sockets = []
         super().__init__(max_retries=0)
 
     def init_poolmanager(self, *args, **kwargs):
         super().init_poolmanager(*args, **kwargs)
         self.poolmanager.pool_classes_by_scheme = {
-            'http': _pool_epingle(HTTPConnectionPool, HTTPConnection, self._adresse),
-            'https': _pool_epingle(HTTPSConnectionPool, HTTPSConnection, self._adresse),
+            'http': _pool_epingle(HTTPConnectionPool, HTTPConnection, self._adresse, self.sockets),
+            'https': _pool_epingle(HTTPSConnectionPool, HTTPSConnection, self._adresse, self.sockets),
         }
+
+
+_TROP_LONG = 'Le serveur du calendrier met trop de temps à envoyer le flux.'
+_TROP_GROS = 'Le flux du calendrier dépasse 5 Mo.'
+
+
+def _lire_borne(resp: requests.Response) -> bytes:
+    """Corps de `resp`, lu par morceaux : refusé dès qu'il dépasse
+    MAX_OCTETS, annoncé par `Content-Length` (avant toute lecture) ou constaté
+    en lisant. La taille comptée est celle du flux décompressé : une petite
+    réponse gzip qui se décompresse en Go est coupée aussi."""
+    annonce = resp.headers.get('Content-Length')
+    if annonce is not None and annonce.strip().isdigit() and int(annonce) > MAX_OCTETS:
+        raise ReponseRefusee(_TROP_GROS)
+    morceaux, total = [], 0
+    for morceau in resp.iter_content(chunk_size=_MORCEAU):
+        total += len(morceau)
+        if total > MAX_OCTETS:
+            raise ReponseRefusee(_TROP_GROS)
+        morceaux.append(morceau)
+    return b''.join(morceaux)
 
 
 def _get(url: str, adresse: str) -> requests.Response:
     """GET de `url` en se connectant à `adresse` (déjà contrôlée), sans suivre
-    de redirection. Seul point de ce module qui ouvre une connexion."""
+    de redirection. Seul point de ce module qui ouvre une connexion. Le corps
+    n'est lu que pour une réponse 2xx, et borné (`_lire_borne`) ; il est posé
+    dans `resp.content` avant la fermeture de la session.
+
+    Délai total (DELAI_TOTAL) : `TIMEOUT` ne borne qu'une lecture, et un
+    serveur qui envoie un octet toutes les 10 s (en-têtes ou corps) ne le
+    déclenche jamais. Une minuterie coupe alors le socket (`shutdown`, sûr
+    depuis un autre fil) : la lecture bloquée rend la main aussitôt."""
+    trop_long = threading.Event()
     with requests.Session() as session:
         session.trust_env = False          # ni mandataire, ni .netrc, ni CA de l'environnement
         adaptateur = _AdaptateurEpingle(adresse)
         session.mount('http://', adaptateur)
         session.mount('https://', adaptateur)
-        resp = session.get(url, timeout=TIMEOUT, allow_redirects=False, verify=VERIFIER_CERTIFICAT)
-        resp.content                       # lu avant la fermeture de la session
+
+        def couper():
+            trop_long.set()
+            for sock in list(adaptateur.sockets):
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass                   # déjà fermé
+
+        minuterie = threading.Timer(DELAI_TOTAL, couper)
+        minuterie.daemon = True
+        minuterie.start()
+        try:
+            resp = session.get(url, timeout=TIMEOUT, allow_redirects=False,
+                               verify=VERIFIER_CERTIFICAT, stream=True)
+            try:
+                resp._content = _lire_borne(resp) if 200 <= resp.status_code < 300 else b''
+            finally:
+                resp.close()
+        except (requests.RequestException, OSError):
+            if trop_long.is_set():
+                raise ReponseRefusee(_TROP_LONG) from None
+            raise
+        finally:
+            minuterie.cancel()
+        if trop_long.is_set():             # coupé : ce qui a été lu est tronqué
+            raise ReponseRefusee(_TROP_LONG)
         return resp
 
 

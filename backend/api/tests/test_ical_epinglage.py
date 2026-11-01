@@ -14,6 +14,7 @@ import socket
 import ssl
 import tempfile
 import threading
+import time
 from unittest import mock
 
 import urllib3.util.connection
@@ -110,7 +111,11 @@ class ServeurLocal:
                 lignes = donnees.decode('latin-1').split('\r\n')
                 host = next((l.split(':', 1)[1].strip() for l in lignes[1:] if l.lower().startswith('host:')), None)
                 self.requetes.append((self._sni_courant, host, lignes[0]))
-                conn.sendall(self.reponses.pop(0) if self.reponses else _http(500))
+                reponse = self.reponses.pop(0) if self.reponses else _http(500)
+                if callable(reponse):
+                    reponse(conn)       # réponse écrite en flux (taille, lenteur)
+                else:
+                    conn.sendall(reponse)
             except (OSError, ssl.SSLError):
                 pass                # poignée de main refusée par le client : c'est un cas testé
             finally:
@@ -127,7 +132,8 @@ def _http(code, corps=b'', location=None):
     return ('\r\n'.join(entetes) + '\r\n\r\n').encode() + corps
 
 
-class EpinglageTests(SimpleTestCase):
+class _AvecServeurLocal(SimpleTestCase):
+    """DNS simulé, ouverture du socket observée, serveur local ; aucun test ici."""
 
     @classmethod
     def setUpClass(cls):
@@ -191,6 +197,9 @@ class EpinglageTests(SimpleTestCase):
         else:
             self.serveur = ServeurLocal(reponses)
         return self.serveur
+
+
+class EpinglageTests(_AvecServeurLocal):
 
     # ── HTTPS ────────────────────────────────────────────────────────────
     def test_https_connexion_a_l_adresse_controlee_sni_host_et_certificat_du_nom(self):
@@ -302,3 +311,115 @@ class EpinglageTests(SimpleTestCase):
         message = ical_fetch.message_erreur(cm.exception)
         self.assertNotIn('secret', message)             # …le message conservé, non
         self.assertNotIn('calendar/ical', message)
+
+
+def _sans_longueur(taille_totale, morceau=64 * 1024, pause=0.0):
+    """Réponse 200 sans `Content-Length` (fin = fermeture), écrite par
+    morceaux jusqu'à `taille_totale` octets ou jusqu'à ce que le client coupe."""
+    def ecrire(conn):
+        conn.sendall(b'HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n')
+        envoye = 0
+        try:
+            while envoye < taille_totale:
+                n = min(morceau, taille_totale - envoye)
+                conn.sendall(b'x' * n)
+                envoye += n
+                if pause:
+                    time.sleep(pause)
+        except OSError:
+            pass                    # le client a coupé : c'est ce qui est attendu
+        ecrire.envoye = envoye
+    ecrire.envoye = 0
+    return ecrire
+
+
+MAX = ical_fetch.MAX_OCTETS
+
+
+class TailleMaximaleTests(_AvecServeurLocal):
+    """Flux borné à 5 Mo, lu par morceaux, délai total borné."""
+
+    def test_cinq_mo_annonces_acceptes(self):
+        self.servir(_http(200, b'x' * MAX), tls=False)
+        self.assertEqual(len(ical_fetch.telecharger(f'http://{NOM}/c.ics')), MAX)
+
+    def test_cinq_mo_plus_un_octet_annonces_refuses(self):
+        self.servir(_http(200, b'x' * (MAX + 1)), tls=False)
+        with self.assertRaises(ical_fetch.ReponseRefusee) as cm:
+            ical_fetch.telecharger(f'http://{NOM}/calendar/ical/1.ics?s=secret')
+        message = ical_fetch.message_erreur(cm.exception)
+        self.assertEqual(message, 'Le flux du calendrier dépasse 5 Mo.')
+        self.assertNotIn('secret', message)
+
+    def test_content_length_annoncant_trop_refuse_avant_lecture(self):
+        # Annonce 1 Go, n'envoie rien : refus sur l'annonce, sans attendre le corps.
+        self.servir(b'HTTP/1.1 200 OK\r\nContent-Length: 1073741824\r\n\r\n', tls=False)
+        debut = time.monotonic()
+        with self.assertRaises(ical_fetch.ReponseRefusee):
+            ical_fetch.telecharger(f'http://{NOM}/c.ics')
+        self.assertLess(time.monotonic() - debut, 5)
+
+    def test_flux_sans_longueur_de_cinq_mo_accepte(self):
+        self.servir(_sans_longueur(MAX), tls=False)
+        self.assertEqual(len(ical_fetch.telecharger(f'http://{NOM}/c.ics')), MAX)
+
+    def test_flux_sans_longueur_de_cinq_mo_plus_un_octet_refuse(self):
+        self.servir(_sans_longueur(MAX + 1), tls=False)
+        with self.assertRaises(ical_fetch.ReponseRefusee):
+            ical_fetch.telecharger(f'http://{NOM}/c.ics')
+
+    def test_flux_sans_longueur_qui_depasse_est_coupe(self):
+        flux = _sans_longueur(200 * 1024 * 1024)        # 200 Mo proposés
+        self.servir(flux, tls=False)
+        with self.assertRaises(ical_fetch.ReponseRefusee) as cm:
+            ical_fetch.telecharger(f'http://{NOM}/c.ics')
+        self.assertEqual(str(cm.exception), 'Le flux du calendrier dépasse 5 Mo.')
+        self.serveur.fil.join(10)       # le serveur voit la coupure et rend la main
+        # Coupé peu après la borne, loin des 200 Mo (tampons TCP compris).
+        self.assertLess(flux.envoye, 40 * 1024 * 1024)
+
+    def test_flux_sans_longueur_qui_depasse_en_https_est_coupe(self):
+        self.servir(_sans_longueur(MAX + 1))
+        with self.assertRaises(ical_fetch.ReponseRefusee):
+            ical_fetch.telecharger(f'https://{NOM}/c.ics')
+
+    def test_flux_goutte_a_goutte_coupe_au_delai_total(self):
+        self._patch(mock.patch.object(ical_fetch, 'DELAI_TOTAL', 1))
+        flux = _sans_longueur(1000, morceau=10, pause=0.2)   # 20 s s'il allait au bout
+        self.servir(flux, tls=False)
+        debut = time.monotonic()
+        with self.assertRaises(ical_fetch.ReponseRefusee) as cm:
+            ical_fetch.telecharger(f'http://{NOM}/calendar/ical/1.ics?s=secret')
+        self.assertLess(time.monotonic() - debut, 5)
+        self.assertEqual(ical_fetch.message_erreur(cm.exception),
+                         'Le serveur du calendrier met trop de temps à envoyer le flux.')
+
+    def test_en_tetes_goutte_a_goutte_coupes_au_delai_total(self):
+        self._patch(mock.patch.object(ical_fetch, 'DELAI_TOTAL', 1))
+
+        def en_tetes_sans_fin(conn):
+            conn.sendall(b'HTTP/1.1 200 OK\r\n')
+            try:
+                for i in range(90):
+                    conn.sendall(f'X-Lent-{i}: 1\r\n'.encode())
+                    time.sleep(0.2)
+            except OSError:
+                pass
+        self.servir(en_tetes_sans_fin, tls=False)
+        debut = time.monotonic()
+        with self.assertRaises(ical_fetch.ReponseRefusee) as cm:
+            ical_fetch.telecharger(f'http://{NOM}/c.ics')
+        self.assertLess(time.monotonic() - debut, 5)
+        self.assertNotIn(NOM, ical_fetch.message_erreur(cm.exception))
+
+    def test_corps_d_une_redirection_jamais_lu(self):
+        # Une redirection suivie d'un corps sans fin : seule la suite est lue.
+        def redirection_sans_fin(conn):
+            conn.sendall(b'HTTP/1.1 302 Found\r\nLocation: /v2.ics\r\nConnection: close\r\n\r\n')
+            try:
+                for _ in range(3000):
+                    conn.sendall(b'x' * 65536)
+            except OSError:
+                pass
+        self.servir(redirection_sans_fin, _http(200, CORPS), tls=False)
+        self.assertEqual(ical_fetch.telecharger(f'http://{NOM}/c.ics'), CORPS)
