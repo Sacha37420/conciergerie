@@ -68,7 +68,7 @@ téléphone) visibles entre co-propriétaires d'un même bien, jamais ceux d'un 
 - [x] Ports liés à `${LAB_BIND_ADDR:-127.0.0.1}` (chantier « failles », I1 ; non déployé)
 - [ ] `README.md` : rôles (gestionnaire, co-propriétaire), synchronisation iCal, bilan
 **Tests à passer avant de clore le lot :**
-- [ ] `validate-app.sh conciergerie --quality-only` vert ; lien direct conservé ; cloisonnement `ok` par le moteur
+- [ ] `validate-app.sh conciergerie --quality-only` vert ; lien direct conservé ; cloisonnement `ok` par le moteur — *2026-11-01 : lien direct vérifié ; reste `validate-app.sh --quality-only` et le cloisonnement joué par le moteur*
 **Vérifié le :**
 
 ## Mise en service — chantier « failles » (2026-11-01)
