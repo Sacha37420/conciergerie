@@ -60,16 +60,20 @@ téléphone) visibles entre co-propriétaires d'un même bien, jamais ceux d'un 
 - [x] Un DNS simulé dont la réponse change entre deux résolutions est refusé ; une redirection vers une adresse interne est refusée (`test_ical_epinglage.py`, vrais sockets et vrai TLS) ; 5 Mo acceptés, 5 Mo + 1 octet refusés, flux sans `Content-Length` coupé, flux goutte à goutte coupé au délai
 **Vérifié le :** 2026-11-01 — non déployé (tests backend verts par `chantiers/tests/essai.sh`).
 
-## Lot 5 — Gabarit front, documentation et chemin à portes   ·   statut : à faire
+## Lot 5 — Gabarit front, documentation et chemin à portes   ·   statut : en cours
 **Objectif :** même comportement que le gabarit corrigé (T3), un README, un déploiement par le moteur (T1).
 **Tâches :**
-- [x] `git rm --cached .keycloak-client-opts` — constaté le 2026-11-01 : le fichier n'est plus suivi (`git ls-files`)
+- [ ] `git rm --cached .keycloak-client-opts` — *2026-11-01 : noté « plus suivi » ; faux au 2026-11-08 : `git ls-files .keycloak-client-opts` le rend encore sur `origin/main` (ajouté par `2ba4905`, jamais retiré), et `.gitignore` ne l'exclut pas*
 - [x] Polices en chemin relatif ; `redirectUri` sur la page courante (`keycloak.service.ts:32`) ; `tokenBases()` ; PKCE (chantier « failles », I2 ; non déployé)
 - [x] Ports liés à `${LAB_BIND_ADDR:-127.0.0.1}` (chantier « failles », I1 ; non déployé)
 - [ ] `README.md` : rôles (gestionnaire, co-propriétaire), synchronisation iCal, bilan
 **Tests à passer avant de clore le lot :**
-- [ ] `validate-app.sh conciergerie --quality-only` vert ; lien direct conservé ; cloisonnement `ok` par le moteur — *2026-11-01 : lien direct vérifié ; reste `validate-app.sh --quality-only` et le cloisonnement joué par le moteur*
+- [x] `validate-app.sh conciergerie --quality-only` vert ; lien direct conservé ; cloisonnement `ok` par le moteur — *2026-11-01 : lien direct vérifié ; 2026-11-01 : cloisonnement `ok`, origine `moteur` (`<LAB_STATE_DIR>/tests/conciergerie.json`) ; 2026-11-08 : `--quality-only` code 0 (copie de ce dossier, outil `valq.sh` du chantier de nuit)*
 **Vérifié le :**
+
+**Relecture du 2026-11-08 (nuit) :** passé de « à faire » à « en cours » : deux tâches sur quatre sont
+faites (la case `.keycloak-client-opts` est décochée, voir plus haut), et les « non déployé » des tâches sont levés par la mise en service ci-dessous (`a26083d` est dans
+la version en service `46501c2`). Restent le `README.md` (absent du dépôt) et le retrait de `.keycloak-client-opts` du suivi git.
 
 ## Mise en service — chantier « failles » (2026-11-01)
 Les mentions « non déployé » ci-dessus datent d'avant cette mise en service. Image construite pendant
