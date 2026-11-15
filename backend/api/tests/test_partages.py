@@ -128,6 +128,9 @@ class ClientStorageTests(SimpleTestCase):
     def setUp(self):
         storage_client._token_cache.update(value='', exp=0.0)
         self.addCleanup(lambda: storage_client._token_cache.update(value='', exp=0.0))
+        p = mock.patch.object(storage_client, '_container_ready', False)
+        p.start()
+        self.addCleanup(p.stop)
         self.post = self._patch('post')
         self.get = self._patch('get')
         self.delete = self._patch('delete')
@@ -173,6 +176,7 @@ class ClientStorageTests(SimpleTestCase):
             storage_client._token()
 
     def test_depot_dans_le_partage_du_bien(self):
+        self.get.return_value = _rep(200)      # partage du bien déjà là (sonde des membres)
         self.post.side_effect = [self.jeton, _rep(201, {'relative_path': 'factures/a.pdf'})]
         resultat = storage_client.upload(7, 'factures/a.pdf', b'octets', 'a.pdf', 'application/pdf')
         self.assertEqual(resultat, {'relative_path': 'factures/a.pdf'})
@@ -183,11 +187,14 @@ class ClientStorageTests(SimpleTestCase):
         self.assertEqual(kw['files']['file'], ('a.pdf', b'octets', 'application/pdf'))
 
     def test_depot_refuse_ou_storage_injoignable(self):
+        self.get.return_value = _rep(200)
         self.post.side_effect = [self.jeton, _rep(403, texte='Forbidden')]
         with self.assertRaisesMessage(storage_client.StorageClientError, 'HTTP 403'):
             storage_client.upload(7, 'a', b'', 'a')
         self.post.side_effect = requests.Timeout('trop long')
-        with self.assertRaisesMessage(storage_client.StorageClientError, 'storage injoignable'):
+        self.get.side_effect = requests.Timeout('trop long')
+        with self.assertLogs('api.storage_client', 'WARNING'), \
+                self.assertRaisesMessage(storage_client.StorageClientError, 'storage injoignable'):
             storage_client.upload(7, 'a', b'', 'a')
 
     def test_telechargement(self):
@@ -226,7 +233,7 @@ class ClientStorageTests(SimpleTestCase):
         self.post.side_effect = post
         storage_client.add_member(7, 'bob@ssolab.local', role='read')
         self.assertEqual(appels, [
-            ('GET', 'http://storage.test/api/files/conciergerie-bien-7/'),
+            ('GET', 'http://storage.test/api/shares/conciergerie-bien-7/members/'),
             ('POST', 'http://storage.test/api/shares/conciergerie-bien-7/members/',
              {'member_email': 'bob@ssolab.local', 'role': 'read'}),
         ])
@@ -234,7 +241,8 @@ class ClientStorageTests(SimpleTestCase):
     def test_ajout_d_un_membre_echecs(self):
         self.post.side_effect = lambda url, **kw: self.jeton if url.endswith('/token') else _rep(400, texte='non')
         self.get.return_value = _rep(403)
-        with self.assertRaisesMessage(storage_client.StorageClientError, 'Création du partage'):
+        with self.assertLogs('api.storage_client', 'WARNING'), \
+                self.assertRaisesMessage(storage_client.StorageClientError, 'Création du partage'):
             storage_client.add_member(7, 'bob@ssolab.local')
         self.get.return_value = _rep(200)
         with self.assertRaisesMessage(storage_client.StorageClientError, 'HTTP 400'):
