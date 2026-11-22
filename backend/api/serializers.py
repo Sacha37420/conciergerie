@@ -151,9 +151,11 @@ class ReservationSerializer(serializers.ModelSerializer):
         parts = bien.parts.select_related('proprietaire')
         # Même règle que le bilan (BienViewSet.bilan) : un co-propriétaire ne
         # reçoit que sa propre part, le gestionnaire les voit toutes.
-        request = self.context.get('request')
-        if request is not None and not is_manager(request):
-            proprietaire = proprietaire_for(request.user)
+        # Sans requête dans le contexte, le lecteur est inconnu : aucune part
+        # (échec fermé, comme ProprietaireSerializer).
+        if not _gestionnaire(self):
+            request = self.context.get('request')
+            proprietaire = proprietaire_for(request.user) if request is not None else None
             parts = parts.filter(proprietaire=proprietaire) if proprietaire else parts.none()
         return [
             {
@@ -217,6 +219,16 @@ class FraisSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(location)
         url = reverse('frais-facture', args=[obj.pk])
         return request.build_absolute_uri(url) if request else url
+
+    def validate_facture_file(self, value):
+        # MAX_UPLOAD_BYTES ne bornait aucun fichier : FILE_UPLOAD_MAX_MEMORY_SIZE
+        # n'est que le seuil mémoire/disque de Django, et
+        # DATA_UPLOAD_MAX_MEMORY_SIZE ne compte pas les fichiers.
+        if value is not None and value.size > settings.MAX_UPLOAD_BYTES:
+            raise serializers.ValidationError(
+                f'Fichier trop volumineux ({settings.MAX_UPLOAD_BYTES // (1024 * 1024)} Mo au plus).'
+            )
+        return value
 
     def validate(self, attrs):
         payeur = attrs.get('payeur', getattr(self.instance, 'payeur', 'maison'))
