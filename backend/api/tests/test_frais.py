@@ -4,6 +4,7 @@ import datetime
 from unittest import mock
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 
 from api import storage_client
 from api.models import Frais, Remboursement, Tache
@@ -159,6 +160,14 @@ class FacturesTests(FraisBase):
         self.assertNotIn('facture_file', resp.json())
         self.assertNotIn('facture_path', resp.json())
 
+    @override_settings(MAX_UPLOAD_BYTES=10)
+    def test_une_facture_trop_lourde_est_refusee_avant_storage(self):
+        resp = self.alice.post('/api/frais/', {**self.corps(), 'facture_file': pdf()}, format='multipart')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('facture_file', resp.json())
+        self.storage.upload.assert_not_called()
+        self.assertFalse(Frais.objects.exists())
+
     def test_un_nom_de_fichier_ne_sort_pas_du_dossier_des_factures(self):
         self.gina.post('/api/frais/', {**self.corps(), 'facture_file': pdf('../../../autre/x.pdf')},
                        format='multipart')
@@ -244,6 +253,26 @@ class FacturesTests(FraisBase):
             self.assertEqual(resp['Content-Type'], 'application/pdf')
             self.assertIn('abc-recu.pdf', resp['Content-Disposition'])
         self.storage.download.assert_called_with(self.maison.pk, 'factures/2026/05/abc-recu.pdf')
+
+    def test_une_facture_html_ou_svg_n_est_jamais_rendue_en_ligne(self):
+        frais = self.avance(self.p_alice, facture_path='factures/2026/05/abc-piege.svg')
+        for type_amont in ('image/svg+xml', 'text/html; charset=utf-8', 'application/xml'):
+            amont = mock.Mock(headers={'Content-Type': type_amont})
+            amont.iter_content.return_value = iter([b'<svg/>'])
+            self.storage.download.return_value = amont
+            resp = self.gina.get(f'/api/frais/{frais.pk}/facture/')
+            self.assertEqual(resp.status_code, 200, type_amont)
+            self.assertEqual(resp['Content-Type'], 'application/octet-stream', type_amont)
+            self.assertTrue(resp['Content-Disposition'].startswith('attachment;'), type_amont)
+            self.assertEqual(resp['X-Content-Type-Options'], 'nosniff')
+            self.assertEqual(b''.join(resp.streaming_content), b'<svg/>')
+
+    def test_storage_en_panne_la_facture_donne_502_et_non_500(self):
+        frais = self.avance(self.p_bob, facture_path='factures/x.pdf')
+        self.storage.download.side_effect = storage_client.StorageClientError('panne')
+        resp = self.gina.get(f'/api/frais/{frais.pk}/facture/')
+        self.assertEqual(resp.status_code, 502)
+        self.assertEqual(resp.json(), {'detail': 'Facture indisponible.'})
 
     def test_telechargement_refuse_hors_du_bien_sans_appeler_storage(self):
         frais = self.avance(self.p_bob, facture_path='factures/x.pdf')

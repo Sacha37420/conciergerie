@@ -7,6 +7,7 @@ from api.models import (
     ApportInitial, Bien, Entreprise, Frais, PartProprietaire, Proprietaire,
     Remboursement, Reservation, Tache, VersementRevenu,
 )
+from api.serializers import ReservationSerializer
 from .base import Base
 
 J = datetime.date(2026, 3, 1)
@@ -214,6 +215,13 @@ class CloisonnementTests(Base):
             for donnees in (client.get(url).json(), client.get('/api/reservations/').json()[0]):
                 self.assertEqual([p['proprietaire_id'] for p in donnees['parts_proprietaires']], [fiche.pk])
                 self.assertIsNotNone(donnees['parts_proprietaires'][0]['montant'])
+
+    def test_parts_de_sejour_masquees_sans_requete(self):
+        # Rendu hors vue (tâche, commande) : le sérialiseur ne sait pas qui lit
+        # et ne rend aucune part — échec fermé, comme ProprietaireSerializer.
+        Reservation.objects.filter(pk=self.res_maison.pk).update(montant_revenu=Decimal('200'), date_paiement=J)
+        self.res_maison.refresh_from_db()
+        self.assertEqual(ReservationSerializer(self.res_maison).data['parts_proprietaires'], [])
 
     def test_filtre_d_url_mal_forme_refuse_en_400(self):
         # Les filtres portant un identifiant n'acceptent que des chiffres ;

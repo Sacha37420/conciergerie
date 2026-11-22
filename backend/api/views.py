@@ -40,6 +40,10 @@ def _filtre_id(request, nom: str) -> str | None:
     return valeur
 
 
+# Types de facture que le navigateur peut afficher sans risque (FraisViewSet.facture).
+TYPES_FACTURE_EN_LIGNE = {'application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/webp'}
+
+
 def _upload_facture(bien_id: int, file_obj) -> str:
     """Dépose `file_obj` dans le partage storage du bien, retourne le
     relative_path à conserver dans Frais.facture_path."""
@@ -322,13 +326,25 @@ class FraisViewSet(viewsets.ModelViewSet):
         frais = self.get_object()
         if not frais.facture_path:
             raise NotFound('Aucune facture pour ce frais.')
-        upstream = storage_client.download(frais.tache.bien_id, frais.facture_path)
+        try:
+            upstream = storage_client.download(frais.tache.bien_id, frais.facture_path)
+        except storage_client.StorageClientError:
+            # Storage en panne ou fichier absent : message fixe, pas d'erreur 500.
+            return Response({'detail': 'Facture indisponible.'}, status=502)
         filename = frais.facture_path.rsplit('/', 1)[-1]
+        # Une facture est déposée par un co-propriétaire : seuls les PDF et les
+        # images matricielles sont rendus en ligne. Tout autre type (HTML, SVG,
+        # XML…) part en téléchargement sous un type neutre — affiché, il
+        # s'exécuterait dans l'origine de l'app, chez le gestionnaire.
+        content_type = upstream.headers.get('Content-Type', 'application/octet-stream')
+        en_ligne = content_type.split(';', 1)[0].strip().lower() in TYPES_FACTURE_EN_LIGNE
         response = StreamingHttpResponse(
             upstream.iter_content(chunk_size=8192),
-            content_type=upstream.headers.get('Content-Type', 'application/octet-stream'),
+            content_type=content_type if en_ligne else 'application/octet-stream',
         )
-        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        disposition = 'inline' if en_ligne else 'attachment'
+        response['Content-Disposition'] = f'{disposition}; filename="{filename}"'
+        response['X-Content-Type-Options'] = 'nosniff'
         return response
 
 

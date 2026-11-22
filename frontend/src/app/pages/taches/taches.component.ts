@@ -4,6 +4,7 @@ import { KeycloakService } from '../../core/keycloak.service';
 import {
   ApiService, Me, Bien, Appartement, Proprietaire, Entreprise, Tache, Frais,
 } from '../../core/api.service';
+import { ouvrirFacture } from '../../core/facture-blob';
 
 type Responsable = 'aucun' | 'proprietaire' | 'entreprise';
 
@@ -166,15 +167,7 @@ export class TachesComponent implements OnInit {
    * un co-propriétaire, ou proxiée par le backend conciergerie pour un
    * gestionnaire) : un <a href> nu n'y aurait plus accès (401 sans token). */
   downloadFacture(f: Frais): void {
-    this.api.downloadFacture(f).subscribe(blob => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      a.click();
-      URL.revokeObjectURL(url);
-    });
+    this.api.downloadFacture(f).subscribe(blob => ouvrirFacture(blob, f.facture!));
   }
 
   peutModifierFrais(f: Frais): boolean {

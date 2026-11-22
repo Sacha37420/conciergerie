@@ -2,6 +2,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { KeycloakService } from '../../core/keycloak.service';
 import { ApiService, Me, Proprietaire, Frais, Remboursement } from '../../core/api.service';
+import { ouvrirFacture } from '../../core/facture-blob';
 
 interface Groupe {
   proprietaire: Proprietaire;
@@ -116,14 +117,6 @@ export class RemboursementsComponent implements OnInit {
    * un co-propriétaire, ou proxiée par le backend conciergerie pour un
    * gestionnaire) : un <a href> nu n'y aurait plus accès (401 sans token). */
   downloadFacture(f: Frais): void {
-    this.api.downloadFacture(f).subscribe(blob => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      a.click();
-      URL.revokeObjectURL(url);
-    });
+    this.api.downloadFacture(f).subscribe(blob => ouvrirFacture(blob, f.facture!));
   }
 }
